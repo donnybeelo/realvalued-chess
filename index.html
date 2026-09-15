@@ -1,0 +1,167 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Real-valued chess</title>
+<style>
+  body { margin: 0; background: #2b2b2b; color: #eee; font: 14px system-ui; display: grid; place-items: center; height: 100vh; }
+  canvas { touch-action: none; }
+  #msg { padding: 8px; height: 20px; }
+  #setup { padding: 12px; max-width: 640px; text-align: center; }
+  #setup p { margin: 8px 0 4px; }
+  textarea { width: 100%; font: 11px monospace; word-break: break-all; }
+  button { font: inherit; padding: 6px 12px; margin-top: 6px; }
+</style>
+<div id="setup"><button id="start">Host a game</button></div>
+<div id="msg"></div>
+<canvas id="c" width="640" height="640"></canvas>
+<script type="module">
+import { N, HALF, BOX, start, legal, apply } from "./rules.js";
+
+const S = 80, cv = document.getElementById("c"), g = cv.getContext("2d"), msg = document.getElementById("msg");
+const GLYPH = { k: "♚", q: "♛", r: "♜", b: "♝", n: "♞", p: "♟" };
+let state = [], turn = "w", me = null, sel = null, hover = null, mask = null, over = null;
+
+const px = (x, y) => me === "b" ? [(N - x) * S, y * S] : [x * S, (N - y) * S];
+const world = e => {
+  const r = cv.getBoundingClientRect();
+  const u = (e.clientX - r.left) / r.width * N, v = (e.clientY - r.top) / r.height * N;
+  return me === "b" ? [N - u, v] : [u, N - v];
+};
+
+const STEP = 0.025;
+
+function buildMask() {
+  mask = [];
+  for (let y = BOX; y <= N - BOX; y += STEP)
+    for (let x = BOX; x <= N - BOX; x += STEP)
+      if (legal(state, sel.id, x, y)) mask.push(px(x, y));
+}
+
+function draw() {
+  for (let i = 0; i < N; i++) for (let j = 0; j < N; j++) {
+    g.fillStyle = (i + j) % 2 ? "#6f9c5a" : "#2d5a28";
+    g.fillRect(i * S, j * S, S, S);
+  }
+  if (mask) {
+    const d = STEP * S + 1;
+    g.fillStyle = "rgba(255,255,255,0.3)";
+    for (const [a, b] of mask) g.fillRect(a - d / 2, b - d / 2, d, d);
+  }
+  for (const p of state) {
+    const [a, b] = px(p.x, p.y);
+    g.font = '58px "DejaVu Sans", "Noto Sans Symbols 2", serif';
+    g.textAlign = "center";
+    g.textBaseline = "middle";
+    g.lineWidth = 3;
+    g.fillStyle = p.c === "w" ? "#fff" : "#111";
+    g.strokeStyle = p.c === "w" ? "#111" : "#fff";
+    g.strokeText(GLYPH[p.t], a, b);
+    g.fillText(GLYPH[p.t], a, b);
+    if (sel && sel.id === p.id) { g.strokeStyle = "#ff0"; g.lineWidth = 2; g.strokeRect(a - S / 2, b - S / 2, S, S); }
+  }
+  if (sel && hover) {
+    const r = legal(state, sel.id, hover[0], hover[1]);
+    const [a, b] = px(hover[0], hover[1]);
+    g.strokeStyle = r ? "#3f3" : "#f33";
+    g.lineWidth = 2;
+    g.strokeRect(a - S / 2, b - S / 2, S, S);
+  }
+}
+
+const setup = document.getElementById("setup");
+const box = document.getElementById("box");
+const pc = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }] });
+let dc = null;
+
+const gathered = () => new Promise(r => {
+  if (pc.iceGatheringState === "complete") return r();
+  pc.addEventListener("icegatheringstatechange", () => pc.iceGatheringState === "complete" && r());
+});
+const pack = d => btoa(JSON.stringify(d));
+const unpack = s => JSON.parse(atob(s));
+
+function offer(label, text, then) {
+  setup.innerHTML = `<p>${label}</p><textarea readonly rows="3"></textarea><button>copy</button>`;
+  setup.querySelector("textarea").value = text;
+  setup.querySelector("button").onclick = e => { navigator.clipboard.writeText(text); e.target.textContent = "copied"; };
+  if (then) {
+    const box = document.createElement("div");
+    box.innerHTML = `<p>${then.label}</p><textarea rows="3"></textarea><button>connect</button>`;
+    box.querySelector("button").onclick = () => then.run(box.querySelector("textarea").value.trim());
+    setup.append(box);
+  }
+}
+
+function wire(channel, colour) {
+  dc = channel;
+  dc.onopen = () => {
+    setup.hidden = true;
+    me = colour;
+    state = start();
+    turn = "w";
+    say();
+    draw();
+  };
+  dc.onclose = () => { over = over ?? "x"; msg.textContent = "opponent disconnected"; };
+  dc.onmessage = e => {
+    const m = JSON.parse(e.data);
+    const p = state.find(q => q.id === m.id);
+    const r = turn !== me && p && p.c !== me && legal(state, m.id, m.x, m.y);
+    if (!r) { over = "x"; msg.textContent = "opponent sent an illegal move"; return; }
+    commit(m.id, m.x, m.y, r);
+  };
+}
+
+async function host() {
+  wire(pc.createDataChannel("game"), "w");
+  await pc.setLocalDescription(await pc.createOffer());
+  await gathered();
+  offer("Send this link to your opponent:", location.href.split("#")[0] + "#" + pack(pc.localDescription), {
+    label: "Then paste their reply here:",
+    run: async code => await pc.setRemoteDescription(unpack(code)),
+  });
+}
+
+async function join(hash) {
+  pc.ondatachannel = e => wire(e.channel, "b");
+  await pc.setRemoteDescription(unpack(hash));
+  await pc.setLocalDescription(await pc.createAnswer());
+  await gathered();
+  offer("Send this reply back to whoever invited you:", pack(pc.localDescription));
+}
+
+function commit(id, x, y, r) {
+  const won = apply(state, id, x, y, r.cap);
+  turn = turn === "w" ? "b" : "w";
+  if (won) over = turn === "w" ? "b" : "w";
+  sel = null;
+  mask = null;
+  say();
+  draw();
+}
+
+const say = () => msg.textContent = over
+  ? (over === me ? "you win" : over === "x" ? msg.textContent : "you lose")
+  : `you are ${me === "w" ? "white" : "black"} — ${turn === me ? "your move" : "their move"}`;
+
+if (location.hash.length > 1) join(location.hash.slice(1));
+else document.getElementById("start").onclick = host;
+
+cv.onpointermove = e => { if (sel) { hover = world(e); draw(); } };
+cv.onpointerdown = e => {
+  if (over || turn !== me || !dc) return;
+  const here = world(e);
+  const pt = sel && hover && legal(state, sel.id, hover[0], hover[1]) ? hover : here;
+  const r = sel && legal(state, sel.id, pt[0], pt[1]);
+  if (r) {
+    dc.send(JSON.stringify({ id: sel.id, x: pt[0], y: pt[1] }));
+    commit(sel.id, pt[0], pt[1], r);
+    return;
+  }
+  const pick = state.find(p => p.c === me && Math.max(Math.abs(p.x - here[0]), Math.abs(p.y - here[1])) < HALF);
+  if (!pick && sel) return;
+  sel = pick ?? null;
+  hover = null;
+  if (sel) buildMask(); else mask = null;
+  draw();
+};
+</script>
