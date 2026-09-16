@@ -1,4 +1,5 @@
-export const N = 8, HALF = 0.5, BOX = 0.35;
+export const N = 8, HALF = 0.5, BOX = 0.35, PAWN = 0.45;
+const body = q => q.t === "p" ? PAWN : BOX;
 const E = 1e-9;
 const ORDER = ["r", "n", "b", "q", "k", "b", "n", "r"];
 
@@ -24,11 +25,11 @@ export function attacks(p, dx, dy) {
 export function region(p, dx, dy) {
   const ax = Math.abs(dx), ay = Math.abs(dy);
   if (ax < E && ay < E) return false;
-  const gone = ax + ay >= 1 - E;
+  const slack = Math.min(HALF, Math.max(ax, ay) / 2);
   switch (p.t) {
-    case "r": return gone && Math.min(ax, ay) <= HALF;
-    case "b": return gone && Math.abs(ax - ay) <= HALF;
-    case "q": return gone && (Math.min(ax, ay) <= HALF || Math.abs(ax - ay) <= HALF);
+    case "r": return Math.min(ax, ay) <= slack;
+    case "b": return Math.abs(ax - ay) <= slack;
+    case "q": return Math.min(ax, ay) <= slack || Math.abs(ax - ay) <= slack;
     case "n": return Math.abs(ax + ay - 3) <= HALF && Math.min(ax, ay) >= HALF && Math.max(ax, ay) <= 2.5;
     case "k": return Math.max(ax, ay) <= 1;
     case "p": {
@@ -42,11 +43,12 @@ export function region(p, dx, dy) {
 }
 
 function hits(ax, ay, bx, by, q) {
+  const h = body(q);
   let t0 = 0, t1 = 1;
   for (const [a, b, c] of [[ax, bx, q.x], [ay, by, q.y]]) {
     const d = b - a;
-    if (Math.abs(d) < E) { if (a <= c - BOX || a >= c + BOX) return false; continue; }
-    let s = (c - BOX - a) / d, e = (c + BOX - a) / d;
+    if (Math.abs(d) < E) { if (a <= c - h || a >= c + h) return false; continue; }
+    let s = (c - h - a) / d, e = (c + h - a) / d;
     if (s > e) [s, e] = [e, s];
     t0 = Math.max(t0, s); t1 = Math.min(t1, e);
     if (t0 >= t1) return false;
@@ -63,16 +65,16 @@ export function legal(ps, id, x, y) {
   let cap = null;
   for (const q of ps) {
     if (q.id === id) continue;
-    if (Math.max(Math.abs(q.x - x), Math.abs(q.y - y)) >= BOX - E) continue;
+    if (Math.max(Math.abs(q.x - x), Math.abs(q.y - y)) >= body(q) - E) continue;
     if (q.c === p.c || cap) return null;
     cap = q;
   }
   if (p.t === "p") {
     if (cap ? !attacks(p, cap.x - p.x, cap.y - p.y) : attacks(p, x - p.x, y - p.y)) return null;
-  }
+  } else if (cap && !region(p, cap.x - p.x, cap.y - p.y)) return null;
   if (p.t !== "n") {
     for (const q of ps) {
-      if (q.t !== "p" || q.id === id || q === cap) continue;
+      if (q.id === id || q === cap) continue;
       if (hits(p.x, p.y, x, y, q)) return null;
     }
   }
@@ -97,7 +99,7 @@ if (import.meta.main) {
   ok(!legal(ps, at(4.5, 1.5), 5.5, 2.5), "pawn diagonal without capture");
   ok(!legal(ps, at(0.5, 0.5), 0.5, 3), "rook blocked by own pawn");
   apply(ps, at(4.5, 1.5), 4.5, 3.5);
-  ok(legal(ps, at(5.5, 0.5), 3.125, 3.0), "bishop slips past its own pawn into the open file");
+  ok(legal(ps, at(5.5, 0.5), 3.0, 3.0), "bishop slips past its own pawn into the open file");
   ok(!legal(ps, at(5.5, 0.5), 3.25, 2.3), "a steeper line still clips a pawn");
   apply(ps, at(4.5, 3.5), 4.5, 1.5);
   ok(legal(ps, at(1.5, 0.5), 0.5, 3), "knight jumps");
@@ -105,13 +107,22 @@ if (import.meta.main) {
   ok(!legal(ps, at(1.5, 0.5), 4.0, 3.0), "knight band excludes the far corner");
   const open = [{ id: 0, c: "w", t: "r", x: 4.5, y: 4.5 }, { id: 1, c: "w", t: "b", x: 2.5, y: 4.5 }];
   ok(!legal(open, 0, 4.8, 4.8), "rook cannot shuffle diagonally off its square");
-  ok(legal(open, 0, 5.4, 4.9), "but may drift while travelling a square");
+  ok(!legal(open, 0, 5.0, 5.0), "nor take a clean 45 degree step between two neighbours");
+  ok(legal(open, 1, 3.25, 5.25), "a short move along the true diagonal is fine");
+  ok(!legal(open, 1, 3.25, 4.8), "but a short move has to be nearly exact");
+  ok(legal(open, 0, 5.5, 4.9), "but may drift while travelling a square");
   ok(!legal(open, 1, 2.9, 4.6), "bishop cannot creep sideways off its square");
-  ok(legal(open, 1, 3.4, 5.3), "bishop travels on the diagonal band");
+  ok(legal(open, 1, 3.5, 5.3), "bishop travels on the diagonal band");
   const near = [{ id: 0, c: "w", t: "n", x: 4.5, y: 4.5 }, { id: 1, c: "w", t: "r", x: 5.5, y: 6.5 }, { id: 2, c: "w", t: "p", x: 3.5, y: 6.5 }];
   ok(legal(near, 0, 6.2, 5.8), "point pieces may stand close together");
   ok(!legal(near, 0, 5.6, 6.6), "but not on top of each other");
   ok(!legal(near, 0, 3.6, 6.4), "and never inside a pawn box");
+  const close = [{ id: 0, c: "w", t: "r", x: 0.5, y: 0.5 }, { id: 1, c: "b", t: "r", x: 0.5, y: 1.4 }];
+  ok(legal(close, 0, 0.5, 1.4)?.cap?.id === 1, "a rook takes an enemy that has crept closer than a square");
+  ok(!legal(close, 0, 1.1, 1.1), "but still cannot step diagonally to do it");
+  const snipe = [{ id: 0, c: "w", t: "b", x: 5.5, y: 0.5 }, { id: 1, c: "b", t: "p", x: 0.5, y: 6.5 }];
+  ok(!legal(snipe, 0, 0.35, 6.1), "bishop cannot clip a pawn whose centre is off its band");
+  ok(legal(snipe, 0, 0.5, 5.5), "the same diagonal reaches the square below it");
   const edge = [{ id: 0, c: "w", t: "r", x: 3.5, y: 2.0 }];
   ok(legal(edge, 0, 3.5, 0.35), "a piece may sit on the board edge");
   ok(!legal(edge, 0, 3.5, 0.2), "but not hang off it");
@@ -119,9 +130,10 @@ if (import.meta.main) {
   ok(legal(grab, 0, 7.5, 5.5)?.cap?.t === "b", "pawn takes the piece on its diagonal");
   ok(legal(grab, 0, 7.2, 5.7)?.cap?.t === "b", "and has room beside it to land in");
   const line = [{ id: 0, c: "w", t: "r", x: 0.5, y: 0.5 }, { id: 1, c: "w", t: "q", x: 2.5, y: 0.5 }, { id: 2, c: "b", t: "k", x: 6.5, y: 0.5 }];
-  ok(legal(line, 0, 4.0, 0.5), "rook passes through a non-pawn");
-  line[1].t = "p";
-  ok(!legal(line, 0, 4.0, 0.5), "rook blocked by a pawn");
+  ok(!legal(line, 0, 4.0, 0.5), "rook blocked by the queen in its way");
+  ok(!legal(line, 0, 4.0, 0.95), "and cannot weave around her inside its band");
+  line.splice(1, 1);
+  ok(legal(line, 0, 4.0, 0.5), "clear rank, clear move");
   ok(!legal(ps, at(2.5, 0.5), 4.5, 2.5), "bishop blocked");
   apply(ps, at(4.5, 1.5), 4.6, 3.4);
   apply(ps, at(3.5, 6.5), 3.6, 4.6);

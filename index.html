@@ -14,11 +14,11 @@
 <div id="msg"></div>
 <canvas id="c" width="640" height="640"></canvas>
 <script type="module">
-import { N, HALF, BOX, start, region, attacks, legal, apply } from "./rules.js";
+import { N, HALF, BOX, start, legal, apply } from "./rules.js";
 
 const S = 80, cv = document.getElementById("c"), g = cv.getContext("2d"), msg = document.getElementById("msg");
 const GLYPH = { k: "♚", q: "♛", r: "♜", b: "♝", n: "♞", p: "♟" };
-let state = [], turn = "w", me = null, sel = null, hover = null, mask = null, threat = null, over = null;
+let state = [], turn = "w", me = null, sel = null, hover = null, mask = null, takes = null, over = null, solo = false;
 
 const px = (x, y) => me === "b" ? [(N - x) * S, y * S] : [x * S, (N - y) * S];
 const world = e => {
@@ -39,12 +39,11 @@ const lift = ch => {
 
 function buildMask() {
   mask = [];
-  threat = [];
+  takes = [];
   for (let y = BOX; y <= N - BOX; y += STEP)
     for (let x = BOX; x <= N - BOX; x += STEP) {
-      const dx = x - sel.x, dy = y - sel.y;
-      if (legal(state, sel.id, x, y)) mask.push(px(x, y));
-      else if (region(sel, dx, dy) && attacks(sel, dx, dy)) threat.push(px(x, y));
+      const r = legal(state, sel.id, x, y);
+      if (r) (r.cap ? takes : mask).push(px(x, y));
     }
 }
 
@@ -54,9 +53,9 @@ function draw() {
     g.fillRect(i * S, j * S, S, S);
   }
   const d = STEP * S + 1;
-  if (threat) {
+  if (takes) {
     g.fillStyle = "rgba(190,60,50,0.35)";
-    for (const [a, b] of threat) g.fillRect(a - d / 2, b - d / 2, d, d);
+    for (const [a, b] of takes) g.fillRect(a - d / 2, b - d / 2, d, d);
   }
   if (mask) {
     g.fillStyle = "rgba(255,255,255,0.3)";
@@ -166,34 +165,42 @@ function commit(id, x, y, r) {
   turn = turn === "w" ? "b" : "w";
   if (won) over = turn === "w" ? "b" : "w";
   sel = null;
-  mask = threat = null;
+  mask = takes = null;
   say();
   draw();
 }
 
 const say = () => msg.textContent = over
   ? (over === me ? "you win" : over === "x" ? msg.textContent : "you lose")
+  : solo ? `${turn === "w" ? "white" : "black"} to move`
   : `you are ${me === "w" ? "white" : "black"} — ${turn === me ? "your move" : "their move"}`;
 
-if (location.hash.length > 1) join(location.hash.slice(1));
+if (location.hash === "#solo") {
+  solo = true;
+  me = "w";
+  state = start();
+  setup.hidden = true;
+  say();
+  draw();
+} else if (location.hash.length > 1) join(location.hash.slice(1));
 else document.getElementById("start").onclick = host;
 
 cv.onpointermove = e => { if (sel) { hover = world(e); draw(); } };
 cv.onpointerdown = e => {
-  if (over || turn !== me || !dc) return;
+  if (over || (!solo && (turn !== me || !dc))) return;
   const here = world(e);
   const pt = sel && hover && legal(state, sel.id, hover[0], hover[1]) ? hover : here;
   const r = sel && legal(state, sel.id, pt[0], pt[1]);
   if (r) {
-    dc.send(JSON.stringify({ id: sel.id, x: pt[0], y: pt[1] }));
+    if (!solo) dc.send(JSON.stringify({ id: sel.id, x: pt[0], y: pt[1] }));
     commit(sel.id, pt[0], pt[1], r);
     return;
   }
-  const pick = state.find(p => p.c === me && Math.max(Math.abs(p.x - here[0]), Math.abs(p.y - here[1])) < HALF);
+  const pick = state.find(p => p.c === (solo ? turn : me) && Math.max(Math.abs(p.x - here[0]), Math.abs(p.y - here[1])) < HALF);
   if (!pick && sel) return;
   sel = pick ?? null;
   hover = null;
-  if (sel) buildMask(); else mask = threat = null;
+  if (sel) buildMask(); else mask = takes = null;
   draw();
 };
 </script>
