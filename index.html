@@ -14,11 +14,11 @@
 <div id="msg"></div>
 <canvas id="c" width="640" height="640"></canvas>
 <script type="module">
-import { N, HALF, BOX, start, legal, apply } from "./rules.js";
+import { N, HALF, BOX, start, region, attacks, legal, apply } from "./rules.js";
 
 const S = 80, cv = document.getElementById("c"), g = cv.getContext("2d"), msg = document.getElementById("msg");
 const GLYPH = { k: "♚", q: "♛", r: "♜", b: "♝", n: "♞", p: "♟" };
-let state = [], turn = "w", me = null, sel = null, hover = null, mask = null, over = null;
+let state = [], turn = "w", me = null, sel = null, hover = null, mask = null, threat = null, over = null;
 
 const px = (x, y) => me === "b" ? [(N - x) * S, y * S] : [x * S, (N - y) * S];
 const world = e => {
@@ -28,12 +28,24 @@ const world = e => {
 };
 
 const STEP = 0.025;
+const lifts = new Map();
+const lift = ch => {
+  if (!lifts.has(ch)) {
+    const m = g.measureText(ch);
+    lifts.set(ch, (m.actualBoundingBoxAscent - m.actualBoundingBoxDescent) / 2);
+  }
+  return lifts.get(ch);
+};
 
 function buildMask() {
   mask = [];
+  threat = [];
   for (let y = BOX; y <= N - BOX; y += STEP)
-    for (let x = BOX; x <= N - BOX; x += STEP)
+    for (let x = BOX; x <= N - BOX; x += STEP) {
+      const dx = x - sel.x, dy = y - sel.y;
       if (legal(state, sel.id, x, y)) mask.push(px(x, y));
+      else if (region(sel, dx, dy) && attacks(sel, dx, dy)) threat.push(px(x, y));
+    }
 }
 
 function draw() {
@@ -41,8 +53,12 @@ function draw() {
     g.fillStyle = (i + j) % 2 ? "#6f9c5a" : "#2d5a28";
     g.fillRect(i * S, j * S, S, S);
   }
+  const d = STEP * S + 1;
+  if (threat) {
+    g.fillStyle = "rgba(190,60,50,0.35)";
+    for (const [a, b] of threat) g.fillRect(a - d / 2, b - d / 2, d, d);
+  }
   if (mask) {
-    const d = STEP * S + 1;
     g.fillStyle = "rgba(255,255,255,0.3)";
     for (const [a, b] of mask) g.fillRect(a - d / 2, b - d / 2, d, d);
   }
@@ -50,12 +66,13 @@ function draw() {
     const [a, b] = px(p.x, p.y);
     g.font = '58px "DejaVu Sans", "Noto Sans Symbols 2", serif';
     g.textAlign = "center";
-    g.textBaseline = "middle";
+    g.textBaseline = "alphabetic";
     g.lineWidth = 3;
     g.fillStyle = p.c === "w" ? "#fff" : "#111";
     g.strokeStyle = p.c === "w" ? "#111" : "#fff";
-    g.strokeText(GLYPH[p.t], a, b);
-    g.fillText(GLYPH[p.t], a, b);
+    const y = b + lift(GLYPH[p.t]);
+    g.strokeText(GLYPH[p.t], a, y);
+    g.fillText(GLYPH[p.t], a, y);
     if (sel && sel.id === p.id) { g.strokeStyle = "#ff0"; g.lineWidth = 2; g.strokeRect(a - S / 2, b - S / 2, S, S); }
   }
   if (sel && hover) {
@@ -149,7 +166,7 @@ function commit(id, x, y, r) {
   turn = turn === "w" ? "b" : "w";
   if (won) over = turn === "w" ? "b" : "w";
   sel = null;
-  mask = null;
+  mask = threat = null;
   say();
   draw();
 }
@@ -176,7 +193,7 @@ cv.onpointerdown = e => {
   if (!pick && sel) return;
   sel = pick ?? null;
   hover = null;
-  if (sel) buildMask(); else mask = null;
+  if (sel) buildMask(); else mask = threat = null;
   draw();
 };
 </script>

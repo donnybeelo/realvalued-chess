@@ -16,6 +16,11 @@ export function start() {
 
 const fwd = (p, dy) => p.c === "w" ? dy : -dy;
 
+export function attacks(p, dx, dy) {
+  const f = fwd(p, dy);
+  return f > 0 && Math.abs(dx) >= Math.min(f, HALF);
+}
+
 export function region(p, dx, dy) {
   const ax = Math.abs(dx), ay = Math.abs(dy);
   if (ax < E && ay < E) return false;
@@ -63,8 +68,7 @@ export function legal(ps, id, x, y) {
     cap = q;
   }
   if (p.t === "p") {
-    const takeable = cap && Math.abs(cap.x - p.x) >= HALF && fwd(p, cap.y - p.y) > 0;
-    if (cap ? !takeable : Math.abs(x - p.x) > HALF) return null;
+    if (cap ? !attacks(p, cap.x - p.x, cap.y - p.y) : attacks(p, x - p.x, y - p.y)) return null;
   }
   if (p.t !== "n") {
     for (const q of ps) {
@@ -124,6 +128,9 @@ if (import.meta.main) {
   const reach = [{ id: 0, c: "b", t: "p", x: 3.5, y: 4.5 }, { id: 1, c: "w", t: "p", x: 3.5, y: 3.4 }, { id: 2, c: "w", t: "p", x: 2.5, y: 3.37 }];
   ok(legal(reach, 0, 2.5, 3.5)?.cap?.id === 2, "pawn reaches a diagonal target sitting past a full square");
   ok(!legal(reach, 0, 3.5, 3.5), "the pawn ahead still blocks the push");
+  const wedge = [{ id: 0, c: "w", t: "p", x: 4.5, y: 1.5 }, { id: 1, c: "b", t: "n", x: 4.9, y: 1.8 }];
+  ok(legal(wedge, 0, 4.9, 1.8)?.cap, "the capture wedge narrows to a point at the pawn");
+  ok(!legal(wedge, 0, 4.0, 1.7), "so a near-sideways step is not a plain push");
   const front = [{ id: 0, c: "w", t: "p", x: 4.5, y: 1.5 }, { id: 1, c: "b", t: "n", x: 4.5, y: 2.5 }];
   ok(!legal(front, 0, 5.1, 2.2), "a pawn cannot sidestep onto a piece straight ahead");
   ok(!legal(front, 0, 4.5, 2.5), "nor take it head-on");
