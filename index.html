@@ -72,6 +72,11 @@ const box = document.getElementById("box");
 const pc = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }] });
 let dc = null;
 
+pc.onconnectionstatechange = () => {
+  if (pc.connectionState === "failed") msg.textContent = "could not reach your opponent — one of you is behind a NAT that needs a relay";
+  else if (pc.connectionState === "connecting" && !dc?.readyState) msg.textContent = "connecting…";
+};
+
 const gathered = () => new Promise(r => {
   const t = setTimeout(r, 1500);
   const done = () => pc.iceGatheringState === "complete" && (clearTimeout(t), r());
@@ -88,7 +93,13 @@ function offer(label, text, then) {
   if (then) {
     const box = document.createElement("div");
     box.innerHTML = `<p>${then.label}</p><textarea rows="3"></textarea><button>connect</button>`;
-    box.querySelector("button").onclick = () => then.run(box.querySelector("textarea").value.trim());
+    const go = box.querySelector("button");
+    go.onclick = async () => {
+      go.disabled = true;
+      msg.textContent = "connecting…";
+      try { await then.run(box.querySelector("textarea").value.trim()); }
+      catch (err) { go.disabled = false; msg.textContent = "that reply was not usable: " + err.message; }
+    };
     setup.append(box);
   }
 }
