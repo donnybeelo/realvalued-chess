@@ -73,8 +73,10 @@ const pc = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.l.google.com:
 let dc = null;
 
 const gathered = () => new Promise(r => {
-  if (pc.iceGatheringState === "complete") return r();
-  pc.addEventListener("icegatheringstatechange", () => pc.iceGatheringState === "complete" && r());
+  const t = setTimeout(r, 1500);
+  const done = () => pc.iceGatheringState === "complete" && (clearTimeout(t), r());
+  pc.addEventListener("icegatheringstatechange", done);
+  done();
 });
 const pack = d => btoa(JSON.stringify(d));
 const unpack = s => JSON.parse(atob(s));
