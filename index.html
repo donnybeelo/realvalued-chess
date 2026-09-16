@@ -112,6 +112,7 @@ function wire(channel, colour) {
 }
 
 async function host() {
+  setup.textContent = "finding a route to you…";
   wire(pc.createDataChannel("game"), "w");
   await pc.setLocalDescription(await pc.createOffer());
   await gathered();
@@ -122,6 +123,7 @@ async function host() {
 }
 
 async function join(hash) {
+  setup.textContent = "finding a route to you…";
   pc.ondatachannel = e => wire(e.channel, "b");
   await pc.setRemoteDescription(unpack(hash));
   await pc.setLocalDescription(await pc.createAnswer());
