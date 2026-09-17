@@ -3,9 +3,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Real-valued chess</title>
 <style>
-  body { margin: 0; background: #2b2b2b; color: #eee; font: 14px system-ui; display: grid; place-content: center; place-items: center; gap: .5rem; min-height: 100svh; }
-  canvas { touch-action: none; width: min(96vw, 100svh - 5rem); height: auto; }
-  #msg { padding: 8px; height: 20px; }
+  body { margin: 0; background: #808080; color: #111; font: 14px system-ui; display: grid; place-content: center; place-items: center; gap: .5rem; min-height: 100svh; }
+  canvas { touch-action: none; width: min(96vw - 8rem, 100svh - 3rem); height: auto; border: 10px solid #fff; }
+  #board { display: flex; align-items: center; gap: .75rem; }
+  #board[hidden] { display: none; }
+  #msg { width: 6rem; }
   #setup { padding: 12px; max-width: 640px; text-align: center; }
   #setup p { margin: 8px 0 4px; }
   #setup h1 { font-size: 3rem; letter-spacing: .3em; margin: .3em 0 0 .3em; }
@@ -21,8 +23,10 @@
   <p>or play both sides from the far seat</p>
   <button id="across">Sit opposite</button>
 </div>
-<div id="msg"></div>
-<canvas id="c" width="640" height="640"></canvas>
+<div id="board" hidden>
+  <canvas id="c" width="640" height="640"></canvas>
+  <div id="msg"></div>
+</div>
 <script type="module">
 import { N, HALF, start, legal, apply } from "./rules.js";
 
@@ -174,6 +178,7 @@ function wire(channel, colour) {
   dc = channel;
   dc.onopen = () => {
     setup.hidden = true;
+    board.hidden = false;
     me = colour;
     state = start();
     turn = "w";
@@ -229,10 +234,13 @@ function commit(id, x, y, r) {
   draw();
 }
 
-const say = () => msg.textContent = over
-  ? (over === me ? "you win" : over === "x" ? msg.textContent : "you lose")
-  : solo ? `${turn === "w" ? "white" : "black"} to move`
-  : `you are ${me === "w" ? "white" : "black"} — ${turn === me ? "your move" : "their move"}`;
+const say = () => {
+  cv.style.borderColor = turn === "w" ? "#fff" : "#111";
+  msg.textContent = over
+    ? (over === me ? "you win" : over === "x" ? msg.textContent : "you lose")
+    : solo ? `${turn === "w" ? "white" : "black"} to move`
+    : `you are ${me === "w" ? "white" : "black"} — ${turn === me ? "your move" : "their move"}`;
+};
 
 const face = () => document.body.classList.toggle("flip", swivel && turn === "b");
 
@@ -242,6 +250,7 @@ const local = side => {
   swivel = side === "b";
   state = start();
   setup.hidden = true;
+  board.hidden = false;
   face();
   say();
   draw();
