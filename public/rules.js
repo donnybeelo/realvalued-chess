@@ -77,9 +77,7 @@ export function legal(ps, id, x, y) {
     if (q.c === p.c || cap) return null;
     cap = q;
   }
-  if (p.t === "p") {
-    if (cap ? !attacks(p, cap.x - p.x, cap.y - p.y) : Math.abs(x - p.x) > HALF) return null;
-  } else if (cap && !region(p, cap.x - p.x, cap.y - p.y)) return null;
+  if (p.t === "p" && (cap ? !attacks(p, cap.x - p.x, cap.y - p.y) : Math.abs(x - p.x) > HALF)) return null;
   if (p.t !== "n") {
     for (const q of ps) {
       if (q.id === id || q === cap) continue;
@@ -164,9 +162,13 @@ if (import.meta.main) {
   apply(ps2, at2(3.5, 1.5), 3.5, 3.5);
   ok(legal(ps2, at2(2.5, 0.5), 4.5, 2.5), "bishop threads the opened file");
   ok(legal(ps2, at2(2.5, 0.5), 4.75, 2.3), "a steeper line threads the gap the diamond leaves");
+  const drift = [{ id: 0, c: "w", t: "p", x: 4.5, y: 3.4 }, { id: 1, c: "b", t: "p", x: 5.4, y: 4.55 }];
+  ok(legal(drift, 0, 5.4, 4.35)?.cap?.id === 1, "a drifted pawn still takes what it attacks");
   const walk = [{ id: 0, c: "w", t: "k", x: 4.5, y: 7.5 }, { id: 1, c: "b", t: "p", x: 3.5, y: 6.5 }];
   ok(legal(walk, 0, 4.2, 6.2), "a king may stand anywhere in the square beside it");
   ok(!legal(walk, 0, 6.2, 5.8), "but not reach the square past that");
   ok(legal(walk, 0, 3.5, 6.5)?.cap?.id === 1, "and takes its diagonal neighbour");
+  const graze = [{ id: 0, c: "w", t: "q", x: 7.0, y: 5.6 }, { id: 1, c: "b", t: "p", x: 3.0, y: 5.0 }];
+  ok(legal(graze, 0, 3.0, 5.2)?.cap?.id === 1, "a queen takes a pawn whose body reaches into her band");
   console.log("ok");
 }
