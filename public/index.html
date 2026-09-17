@@ -3,8 +3,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Real-valued chess</title>
 <style>
-  body { margin: 0; background: #808080; color: #111; font: 14px system-ui; display: grid; place-content: center; place-items: center; gap: .5rem; min-height: 100svh; overflow: hidden; }
-  canvas { touch-action: none; display: block; width: min(96vw - 20px, 100svh - 5.5rem); height: auto; border: 10px solid #fff; }
+  body { margin: 0; -webkit-user-select: none; user-select: none; background: #808080; color: #111; font: 14px system-ui; display: grid; place-content: center; place-items: center; gap: .5rem; min-height: 100svh; overflow: hidden; }
+  canvas { touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; display: block; width: min(96vw - 20px, 100svh - 5.5rem); height: auto; border: 10px solid #fff; }
   #board { position: relative; }
   #board[hidden] { display: none; }
   #msg { position: absolute; top: 100%; left: 0; right: 0; text-align: center; z-index: -1; }
@@ -149,8 +149,16 @@ function draw() {
   if (sel && hover) {
     const r = legal(state, sel.id, hover[0], hover[1]);
     const [a, b] = px(hover[0], hover[1]);
+    if (r?.cap) {
+      const [cx, cy] = px(r.cap.x, r.cap.y);
+      g.strokeStyle = "#f22";
+      g.lineWidth = 6;
+      g.beginPath();
+      g.arc(cx, cy, S * 0.46, 0, 2 * Math.PI);
+      g.stroke();
+    }
     g.globalAlpha = 0.85;
-    glyph(sel, a, b, r ? "#3f3" : "#f33");
+    glyph(sel, a, b, r ? (r.cap ? "#fb0" : "#3f3") : "#f33");
     g.globalAlpha = 1;
   }
 }
@@ -432,6 +440,7 @@ function drop() {
 cv.onpointermove = e => { if (sel) { hover = snap(aim(world(e))); draw(); } };
 
 cv.onpointerdown = e => {
+  e.preventDefault();
   if (over || (!solo && (turn !== me || !live))) return;
   cv.setPointerCapture(e.pointerId);
   touch = e.pointerType !== "mouse";
