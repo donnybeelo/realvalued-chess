@@ -162,7 +162,17 @@ function glyph(p, a, b, tint, grow = 1) {
   g.restore();
 }
 
+function fit() {
+  const k = Math.min(3, devicePixelRatio || 1);
+  const w = Math.max(640, Math.round(cv.getBoundingClientRect().width * k));
+  if (cv.width === w) return false;
+  cv.width = cv.height = w;
+  g.setTransform(w / 640, 0, 0, w / 640, 0, 0);
+  return true;
+}
+
 function draw() {
+  fit();
   for (let i = 0; i < N; i++) for (let j = 0; j < N; j++) {
     g.fillStyle = (i + j) % 2 ? "#6f9c5a" : "#2d5a28";
     g.fillRect(i * S, j * S, S, S);
@@ -518,7 +528,7 @@ const rest = () => requestAnimationFrame(() => {
   msg.style.transform = pose(far ? ceiling() : floor());
   both();
 });
-addEventListener("resize", rest);
+addEventListener("resize", () => { rest(); draw(); });
 
 const face = () => {
   slide();
