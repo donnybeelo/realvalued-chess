@@ -1,4 +1,4 @@
-export const N = 8, HALF = 0.5, BOX = 0.35, PAWN = 0.45;
+export const N = 8, HALF = 0.5, BOX = 0.35, PAWN = HALF;
 const body = q => q.t === "p" ? PAWN : BOX;
 const E = 1e-9;
 const ORDER = ["r", "n", "b", "q", "k", "b", "n", "r"];

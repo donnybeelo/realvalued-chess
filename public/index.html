@@ -21,7 +21,7 @@
 <div id="msg"></div>
 <canvas id="c" width="640" height="640"></canvas>
 <script type="module">
-import { N, HALF, BOX, start, legal, apply } from "./rules.js";
+import { N, HALF, start, legal, apply } from "./rules.js";
 
 const S = 80, cv = document.getElementById("c"), g = cv.getContext("2d"), msg = document.getElementById("msg");
 const GLYPH = { k: "♚", q: "♛", r: "♜", b: "♝", n: "♞", p: "♟" };
@@ -37,7 +37,6 @@ const world = e => {
 const LIFT = 1;
 const aim = ([x, y]) => touch ? [x, Math.min(Math.max(y + (me === "b" ? -LIFT : LIFT), 0), N)] : [x, y];
 
-const STEP = 0.025;
 const lifts = new Map();
 const lift = ch => {
   if (!lifts.has(ch)) {
@@ -47,14 +46,26 @@ const lift = ch => {
   return lifts.get(ch);
 };
 
+const STEP = 0.05;
+
 function buildMask() {
   mask = [];
   takes = [];
-  for (let y = BOX; y <= N - BOX; y += STEP)
-    for (let x = BOX; x <= N - BOX; x += STEP) {
-      const r = legal(state, sel.id, x, y);
-      if (r) (r.cap ? takes : mask).push(px(x, y));
-    }
+  for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+    const c = legal(state, sel.id, i + 0.5, j + 0.5);
+    if (!c) continue;
+    for (let y = j + STEP / 2; y < j + 1; y += STEP)
+      for (let x = i + STEP / 2; x < i + 1; x += STEP) {
+        const r = legal(state, sel.id, x, y);
+        if (r) (r.cap ? takes : mask).push(px(x, y));
+      }
+  }
+}
+
+function cells(list, style) {
+  const d = STEP * S + 1;
+  g.fillStyle = style;
+  for (const [a, b] of list) g.fillRect(a - d / 2, b - d / 2, d, d);
 }
 
 function glyph(p, a, b, tint) {
@@ -74,15 +85,8 @@ function draw() {
     g.fillStyle = (i + j) % 2 ? "#6f9c5a" : "#2d5a28";
     g.fillRect(i * S, j * S, S, S);
   }
-  const d = STEP * S + 1;
-  if (takes) {
-    g.fillStyle = "rgba(190,60,50,0.35)";
-    for (const [a, b] of takes) g.fillRect(a - d / 2, b - d / 2, d, d);
-  }
-  if (mask) {
-    g.fillStyle = "rgba(255,255,255,0.3)";
-    for (const [a, b] of mask) g.fillRect(a - d / 2, b - d / 2, d, d);
-  }
+  if (takes) cells(takes, "rgba(200,60,50,0.45)");
+  if (mask) cells(mask, "rgba(255,255,255,0.35)");
   for (const p of state) {
     const [a, b] = px(p.x, p.y);
     glyph(p, a, b);
