@@ -51,7 +51,7 @@ function hits(ax, ay, bx, by, q) {
     let s = (c - h - a) / d, e = (c + h - a) / d;
     if (s > e) [s, e] = [e, s];
     t0 = Math.max(t0, s); t1 = Math.min(t1, e);
-    if (t0 >= t1) return false;
+    if (t1 - t0 <= E) return false;
   }
   return true;
 }
