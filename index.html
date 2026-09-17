@@ -1,9 +1,10 @@
 <!doctype html>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Real-valued chess</title>
 <style>
-  body { margin: 0; background: #2b2b2b; color: #eee; font: 14px system-ui; display: grid; place-items: center; height: 100vh; }
-  canvas { touch-action: none; }
+  body { margin: 0; background: #2b2b2b; color: #eee; font: 14px system-ui; display: grid; place-content: center; place-items: center; gap: .5rem; min-height: 100svh; }
+  canvas { touch-action: none; width: min(96vw, 100svh - 5rem); height: auto; }
   #msg { padding: 8px; height: 20px; }
   #setup { padding: 12px; max-width: 640px; text-align: center; }
   #setup p { margin: 8px 0 4px; }
@@ -89,15 +90,25 @@ const pc = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.l.google.com:
 let dc = null;
 
 pc.onconnectionstatechange = () => {
-  if (pc.connectionState === "failed") msg.textContent = "could not reach your opponent — one of you is behind a NAT that needs a relay";
+  if (pc.connectionState === "failed") msg.textContent = routed
+    ? "could not reach your opponent — try again, or a relay may be needed"
+    : "no public route was found for this device — that link only works on your own network";
   else if (pc.connectionState === "connecting" && !dc?.readyState) msg.textContent = "connecting…";
 };
 
+let routed = false;
 const gathered = () => new Promise(r => {
-  const t = setTimeout(r, 1500);
-  const done = () => pc.iceGatheringState === "complete" && (clearTimeout(t), r());
-  pc.addEventListener("icegatheringstatechange", done);
-  done();
+  const cap = setTimeout(r, 10000);
+  const stop = () => (clearTimeout(cap), r());
+  pc.addEventListener("icecandidate", e => {
+    if (!e.candidate) return stop();
+    if (e.candidate.type === "srflx" || e.candidate.type === "relay") {
+      routed = true;
+      setTimeout(stop, 500);
+    }
+  });
+  pc.addEventListener("icegatheringstatechange", () => pc.iceGatheringState === "complete" && stop());
+  if (pc.iceGatheringState === "complete") stop();
 });
 const pack = d => btoa(JSON.stringify(d));
 const unpack = s => JSON.parse(atob(s));
@@ -185,22 +196,39 @@ if (location.hash === "#solo") {
 } else if (location.hash.length > 1) join(location.hash.slice(1));
 else document.getElementById("start").onclick = host;
 
+function play(pt) {
+  const r = sel && legal(state, sel.id, pt[0], pt[1]);
+  if (!r) return false;
+  if (!solo) dc.send(JSON.stringify({ id: sel.id, x: pt[0], y: pt[1] }));
+  commit(sel.id, pt[0], pt[1], r);
+  return true;
+}
+
+let down = null;
+
 cv.onpointermove = e => { if (sel) { hover = world(e); draw(); } };
+
 cv.onpointerdown = e => {
   if (over || (!solo && (turn !== me || !dc))) return;
+  cv.setPointerCapture(e.pointerId);
   const here = world(e);
+  down = here;
   const pt = sel && hover && legal(state, sel.id, hover[0], hover[1]) ? hover : here;
-  const r = sel && legal(state, sel.id, pt[0], pt[1]);
-  if (r) {
-    if (!solo) dc.send(JSON.stringify({ id: sel.id, x: pt[0], y: pt[1] }));
-    commit(sel.id, pt[0], pt[1], r);
-    return;
-  }
+  if (sel && play(pt)) return;
   const pick = state.find(p => p.c === (solo ? turn : me) && Math.max(Math.abs(p.x - here[0]), Math.abs(p.y - here[1])) < HALF);
   if (!pick && sel) return;
   sel = pick ?? null;
-  hover = null;
+  hover = here;
   if (sel) buildMask(); else mask = takes = null;
   draw();
 };
+
+cv.onpointerup = e => {
+  const up = world(e);
+  const dragged = down && Math.max(Math.abs(up[0] - down[0]), Math.abs(up[1] - down[1])) > 0.25;
+  down = null;
+  if (sel && dragged) play(up);
+};
+
+cv.onpointercancel = () => { down = null; };
 </script>
