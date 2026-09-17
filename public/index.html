@@ -9,6 +9,7 @@
   #board { position: relative; }
   #graves { position: fixed; inset: 4px 10px auto; display: flex; flex-direction: column; justify-content: space-between; height: calc(100svh - 8px); pointer-events: none; }
   .tray { display: flex; gap: 2px; height: 24px; }
+  #lostw { transform: rotate(180deg); }
   #tools { position: fixed; right: 10px; bottom: 10px; display: flex; gap: .5rem; }
   #board[hidden] { display: none; }
   #msg, #msg2 { position: absolute; top: 100%; left: 0; right: 0; text-align: center; z-index: -1; }
@@ -162,13 +163,15 @@ function draw() {
   }
   if (takes) cells(takes, "rgba(200,60,50,0.45)");
   if (mask) cells(mask, "rgba(255,255,255,0.35)");
+  const lift = sel && hover ? legal(state, sel.id, hover[0], hover[1]) : null;
   for (const p of state) {
     const [a, b] = px(p.x, p.y);
-    if (!(sel && hover && p.id === sel.id)) glyph(p, a, b);
+    if (sel && hover && (p.id === sel.id || p === lift?.swap?.rook)) continue;
+    glyph(p, a, b);
     if (sel && sel.id === p.id) { g.strokeStyle = "#ff0"; g.lineWidth = 2; g.strokeRect(a - S / 2, b - S / 2, S, S); }
   }
   if (sel && hover) {
-    const r = legal(state, sel.id, hover[0], hover[1]);
+    const r = lift;
     const [a, b] = px(hover[0], hover[1]);
     if (r?.cap) {
       const [cx, cy] = px(r.cap.x, r.cap.y);
@@ -194,7 +197,7 @@ function draw() {
     }
     const tint = r ? (r.cap ? "#fb0" : "#3f3") : "#f33";
     g.globalAlpha = 0.7;
-    if (r?.swap) glyph(r.swap.rook, ...px(r.swap.rx, r.swap.ry), "#3f3", 1.25);
+    if (r?.swap) glyph(r.swap.rook, ...px(r.swap.rx, r.swap.ry), "#3f3");
     glyph(sel, a, b, tint, 1.25);
     g.globalAlpha = 1;
     g.fillStyle = tint;
