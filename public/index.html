@@ -55,15 +55,37 @@ const lift = ch => {
 };
 
 const STEP = 0.05;
+const ROWS = 640;
 
 function buildMask() {
   mask = [];
   takes = [];
-  for (let y = STEP / 2; y < N; y += STEP)
-    for (let x = STEP / 2; x < N; x += STEP) {
-      const r = legal(state, sel.id, x, y);
-      if (r) (r.cap ? takes : mask).push([...px(x, y), x, y]);
+  const h = N / ROWS;
+  const kind = (x, y) => { const r = legal(state, sel.id, x, y); return r ? (r.cap ? 2 : 1) : 0; };
+  const edge = (lo, hi, y, k) => {
+    for (let i = 0; i < 10; i++) {
+      const m = (lo + hi) / 2;
+      if (kind(m, y) === k) lo = m; else hi = m;
     }
+    return (lo + hi) / 2;
+  };
+  const band = (k, x0, x1, y) => {
+    const [a0, b0] = px(x0, y - h / 2), [a1, b1] = px(x1, y + h / 2);
+    (k === 2 ? takes : mask).push([Math.min(a0, a1), Math.min(b0, b1), Math.abs(a1 - a0), Math.abs(b1 - b0) + 1]);
+  };
+  for (let i = 0; i < ROWS; i++) {
+    const y = (i + 0.5) * h;
+    let prev = 0, from = 0;
+    for (let x = 0; x <= N + 1e-9; x += STEP) {
+      const k = kind(x, y);
+      if (k === prev) continue;
+      const cut = edge(x - STEP, x, y, prev);
+      if (prev) band(prev, from, cut, y);
+      from = cut;
+      prev = k;
+    }
+    if (prev) band(prev, from, N, y);
+  }
 }
 
 const PULL = 0.4;
@@ -73,10 +95,10 @@ function snap(pt) {
   if (!sel || legal(state, sel.id, pt[0], pt[1])) return pt;
   const far = c => Math.hypot(c[0] - pt[0], c[1] - pt[1]);
   let best = null, bd = PULL;
-  for (const list of [mask, takes])
-    for (const [, , x, y] of list ?? []) {
+  for (let y = pt[1] - PULL; y <= pt[1] + PULL; y += STEP)
+    for (let x = pt[0] - PULL; x <= pt[0] + PULL; x += STEP) {
       const d = Math.hypot(x - pt[0], y - pt[1]);
-      if (d < bd) { bd = d; best = [x, y]; }
+      if (d < bd && legal(state, sel.id, x, y)) { bd = d; best = [x, y]; }
     }
   if (!best) return pt;
   for (let step = STEP; step > 1e-3; step /= 2)
@@ -89,9 +111,8 @@ function snap(pt) {
 }
 
 function cells(list, style) {
-  const d = STEP * S + 1;
   g.fillStyle = style;
-  for (const [a, b] of list) g.fillRect(a - d / 2, b - d / 2, d, d);
+  for (const [a, b, w, h] of list) g.fillRect(a, b, w, h);
 }
 
 function glyph(p, a, b, tint) {
