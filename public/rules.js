@@ -76,7 +76,7 @@ export function legal(ps, id, x, y) {
     if (q.c === p.c || cap) return null;
     cap = q;
   }
-  if (cap && p.t !== "p" && !region(p, cap.x - p.x, cap.y - p.y)) return null;
+  if (cap && p.t !== "p" && p.t !== "n" && !region(p, cap.x - p.x, cap.y - p.y)) return null;
   if (p.t === "p" && (cap ? !attacks(p, cap.x - p.x, cap.y - p.y) : Math.abs(x - p.x) > HALF)) return null;
   for (const q of ps) {
     if (q.id === id || q === cap) continue;
@@ -185,6 +185,8 @@ if (import.meta.main) {
   const pals = [{ id: 0, c: "w", t: "r", x: 4.5, y: 4.5 }, { id: 1, c: "w", t: "n", x: 4.5, y: 6.5 }, { id: 2, c: "b", t: "n", x: 6.5, y: 4.5 }];
   ok(!legal(pals, 0, 4.5, 6.2), "no piece may crowd a friend");
   ok(legal(pals, 0, 6.2, 4.5), "but may crowd an enemy");
+  const hop = [{ id: 0, c: "w", t: "n", x: 4.5, y: 4.5 }, { id: 1, c: "b", t: "p", x: 7.1, y: 5.1 }];
+  ok(legal(hop, 0, 6.75, 5.05)?.cap?.id === 1, "a knight takes whatever leans into its triangle");
   const graze = [{ id: 0, c: "w", t: "q", x: 7.0, y: 5.6 }, { id: 1, c: "b", t: "p", x: 3.0, y: 5.0 }];
   ok(!legal(graze, 0, 3.2, 5.2)?.cap, "a queen cannot take a pawn whose centre sits outside her band");
   graze[1].y = 5.4;
