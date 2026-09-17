@@ -34,6 +34,9 @@ const world = e => {
   return me === "b" ? [N - u, v] : [u, N - v];
 };
 
+const LIFT = 1;
+const aim = ([x, y]) => touch ? [x, Math.min(Math.max(y + (me === "b" ? -LIFT : LIFT), 0), N)] : [x, y];
+
 const STEP = 0.025;
 const lifts = new Map();
 const lift = ch => {
@@ -54,6 +57,18 @@ function buildMask() {
     }
 }
 
+function glyph(p, a, b, tint) {
+  g.font = '58px "DejaVu Sans", "Noto Sans Symbols 2", serif';
+  g.textAlign = "center";
+  g.textBaseline = "alphabetic";
+  g.lineWidth = 3;
+  g.fillStyle = tint ?? (p.c === "w" ? "#fff" : "#111");
+  g.strokeStyle = p.c === "w" ? "#111" : "#fff";
+  const y = b + lift(GLYPH[p.t]);
+  g.strokeText(GLYPH[p.t], a, y);
+  g.fillText(GLYPH[p.t], a, y);
+}
+
 function draw() {
   for (let i = 0; i < N; i++) for (let j = 0; j < N; j++) {
     g.fillStyle = (i + j) % 2 ? "#6f9c5a" : "#2d5a28";
@@ -70,23 +85,15 @@ function draw() {
   }
   for (const p of state) {
     const [a, b] = px(p.x, p.y);
-    g.font = '58px "DejaVu Sans", "Noto Sans Symbols 2", serif';
-    g.textAlign = "center";
-    g.textBaseline = "alphabetic";
-    g.lineWidth = 3;
-    g.fillStyle = p.c === "w" ? "#fff" : "#111";
-    g.strokeStyle = p.c === "w" ? "#111" : "#fff";
-    const y = b + lift(GLYPH[p.t]);
-    g.strokeText(GLYPH[p.t], a, y);
-    g.fillText(GLYPH[p.t], a, y);
+    glyph(p, a, b);
     if (sel && sel.id === p.id) { g.strokeStyle = "#ff0"; g.lineWidth = 2; g.strokeRect(a - S / 2, b - S / 2, S, S); }
   }
   if (sel && hover) {
     const r = legal(state, sel.id, hover[0], hover[1]);
     const [a, b] = px(hover[0], hover[1]);
-    g.strokeStyle = r ? "#3f3" : "#f33";
-    g.lineWidth = 2;
-    g.strokeRect(a - S / 2, b - S / 2, S, S);
+    g.globalAlpha = 0.85;
+    glyph(sel, a, b, r ? "#3f3" : "#f33");
+    g.globalAlpha = 1;
   }
 }
 
@@ -221,27 +228,27 @@ function play(pt) {
   return true;
 }
 
-let down = null;
+let down = null, touch = false;
 
-cv.onpointermove = e => { if (sel) { hover = world(e); draw(); } };
+cv.onpointermove = e => { if (sel) { hover = aim(world(e)); draw(); } };
 
 cv.onpointerdown = e => {
   if (over || (!solo && (turn !== me || !dc))) return;
   cv.setPointerCapture(e.pointerId);
-  const here = world(e);
-  down = here;
-  const pt = sel && hover && legal(state, sel.id, hover[0], hover[1]) ? hover : here;
-  if (sel && play(pt)) return;
+  touch = e.pointerType !== "mouse";
+  const here = world(e), pt = aim(here);
+  down = pt;
+  if (sel && play(hover && legal(state, sel.id, hover[0], hover[1]) ? hover : pt)) return;
   const pick = state.find(p => p.c === (solo ? turn : me) && Math.max(Math.abs(p.x - here[0]), Math.abs(p.y - here[1])) < HALF);
   if (!pick && sel) return;
   sel = pick ?? null;
-  hover = here;
+  hover = sel ? pt : null;
   if (sel) buildMask(); else mask = takes = null;
   draw();
 };
 
 cv.onpointerup = e => {
-  const up = world(e);
+  const up = aim(world(e));
   const dragged = down && Math.max(Math.abs(up[0] - down[0]), Math.abs(up[1] - down[1])) > 0.25;
   down = null;
   if (sel && dragged) play(up);
