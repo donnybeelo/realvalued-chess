@@ -37,12 +37,16 @@ export default {
   async fetch(req, env) {
     const path = new URL(req.url).pathname;
     if (req.method === "OPTIONS") return json(null, 204);
-    if (path === "/api/ice") return json({
-      iceServers: [
-        { urls: "stun:stun.l.google.com:19302" },
-        ...(env.TURN_URLS ? [{ urls: env.TURN_URLS.split(","), username: env.TURN_USER, credential: env.TURN_PASS }] : []),
-      ],
-    });
+    if (path === "/api/ice") {
+      const servers = [{ urls: "stun:stun.l.google.com:19302" }];
+      if (env.TURN_APP && env.TURN_KEY) {
+        try {
+          const r = await fetch(`https://${env.TURN_APP}.metered.live/api/v1/turn/credentials?apiKey=${env.TURN_KEY}`);
+          if (r.ok) servers.push(...await r.json());
+        } catch {}
+      }
+      return json({ iceServers: servers });
+    }
     if (!path.startsWith("/api/")) return new Response("not found", { status: 404 });
     return env.LOBBY.get(env.LOBBY.idFromName("lobby")).fetch(req);
   },
