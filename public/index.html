@@ -33,15 +33,16 @@ import { N, HALF, start, legal, apply } from "./rules.js";
 
 const S = 80, cv = document.getElementById("c"), g = cv.getContext("2d"), msg = document.getElementById("msg"), txt = document.getElementById("txt");
 const ART = {
-  p: "M63 31a13 13 0 1 1-26 0 13 13 0 1 1 26 0zM37 46h26l7 32H30zM24 78h52v10H24z",
-  r: "M30 24h9v8h8v-8h6v8h8v-8h9v18H30zM34 44h32l4 32H30zM24 78h52v11H24z",
-  n: "M27.5 80c0-12 5-19 11-26l-12-2c-4-1-4-6-1-9 7-9 14-15 23-19l-2-12 11 8c11 7 15 22 15 60zM24 80h52v9H24z",
-  b: "M55 12a5 5 0 1 1-10 0 5 5 0 1 1 10 0zM50 20c10 9 17 18 17 27 0 9-8 15-17 15s-17-6-17-15c0-9 7-18 17-27zM38 64h24l7 16H31zM26 80h48v9H26z",
-  q: "M26 24 34 44 42 22 50 44 58 22 66 44 74 24 70 58H30zM30 60h40l6 18H24zM24 78h52v10H24z",
-  k: "M46 10h8v8h8v8h-8v8h-8v-8h-8v-8h8zM32 36h36l-4 22H36zM28 60h44l5 18H23zM23 78h54v10H23z",
+  p: "M64 26a14 14 0 1 1-28 0 14 14 0 1 1 28 0zM37 44h26l7 34H30zM24 78h52v10H24z",
+  r: "M30 12h9v8h8v-8h6v8h8v-8h9v20H30zM34 34h32l5 44H29zM24 78h52v10H24z",
+  n: "M27.5 80c0-12 5-19 11-26l-12-2c-4-1-4-6-1-9 7-9 14-15 23-19l-2-12 11 8c11 7 15 22 15 60zM24 78h52v10H24z",
+  b: "M55 17a5 5 0 1 1-10 0 5 5 0 1 1 10 0zM50 24c10 9 17 18 17 27 0 9-8 15-17 15s-17-6-17-15c0-9 7-18 17-27zM38 66h24l7 12H31zM24 78h52v10H24z",
+  q: "M26 14 34 36 42 12 50 36 58 12 66 36 74 14 70 50H30zM30 52h40l6 26H24zM24 78h52v10H24z",
+  k: "M46 12h8v8h8v8h-8v8h-8v-8h-8v-8h8zM32 38h36l-4 20H36zM28 60h44l5 18H23zM23 78h54v10H23z",
 };
 const carved = {};
 const art = t => carved[t] ??= new Path2D(ART[t]);
+
 let spin = 0, aimed = 0;
 let state = [], turn = "w", me = null, sel = null, hover = null, mask = null, takes = null, over = null, solo = false, swivel = false;
 
@@ -156,7 +157,7 @@ function draw() {
 
 const setup = document.getElementById("setup");
 const API = location.origin + "/api";
-let pc = null, dc = null, routed = false;
+let pc = null, dc = null, routed = false, code = null, seen = -1, live = false, trying = false;
 
 const api = (path, body) => fetch(API + path, body ? { method: "POST", body: JSON.stringify(body) } : undefined);
 
@@ -167,10 +168,10 @@ async function peer() {
     if (r.ok) config = await r.json();
   } catch {}
   pc = new RTCPeerConnection(config);
+  const self = pc;
   pc.onconnectionstatechange = () => {
-    if (pc.connectionState === "failed") txt.textContent = routed
-      ? "could not reach your opponent — try again"
-      : "no route out of this network was found";
+    if (pc !== self) return;
+    if (pc.connectionState === "failed" || pc.connectionState === "disconnected") lost();
     else if (pc.connectionState === "connecting" && !dc?.readyState) txt.textContent = "connecting…";
   };
 }
@@ -189,11 +190,14 @@ const gathered = () => new Promise(r => {
   if (pc.iceGatheringState === "complete") stop();
 });
 
-async function waitFor(path, tries) {
+async function waitFor(path, tries, ok = () => true) {
   for (let i = 0; i < tries; i++) {
     const r = await api(path);
-    if (r.status === 200) return r.json();
     if (r.status === 404) return null;
+    if (r.status === 200) {
+      const v = await r.json();
+      if (ok(v)) return v;
+    }
     await new Promise(s => setTimeout(s, 1500));
   }
   return null;
@@ -204,21 +208,84 @@ function wire(channel, colour) {
   dc.onopen = () => {
     setup.hidden = true;
     board.hidden = false;
+    live = true;
     me = colour;
-    state = start();
-    turn = "w";
+    if (!state.length) { state = start(); turn = "w"; }
+    else if (me === "w") dc.send(JSON.stringify({ sync: state, turn, over }));
     say();
+    rest();
     draw();
   };
-  dc.onclose = () => { over = over ?? "x"; txt.textContent = "opponent disconnected"; };
+  dc.onclose = () => { if (dc === channel) lost(); };
   dc.onmessage = e => {
     const m = JSON.parse(e.data);
+    if (m.sync) {
+      state = m.sync;
+      turn = m.turn;
+      over = m.over;
+      sel = null;
+      mask = takes = null;
+      say();
+      draw();
+      return;
+    }
     const p = state.find(q => q.id === m.id);
     const r = turn !== me && p && p.c !== me && legal(state, m.id, m.x, m.y);
     if (!r) { over = "x"; txt.textContent = "opponent sent an illegal move"; return; }
     commit(m.id, m.x, m.y, r);
   };
 }
+
+function lost() {
+  if (!live && trying) return;
+  live = false;
+  if (over === "x" || !code) return;
+  txt.textContent = "reconnecting…";
+  regain();
+}
+
+async function regain() {
+  if (trying) return;
+  trying = true;
+  while (!live) {
+    try { await (me === "w" ? offerAgain() : answerAgain()); } catch {}
+    if (!live) await new Promise(r => setTimeout(r, 2000));
+  }
+  trying = false;
+}
+
+async function offerAgain() {
+  pc?.close();
+  await peer();
+  wire(pc.createDataChannel("game"), "w");
+  await pc.setLocalDescription(await pc.createOffer());
+  await gathered();
+  const r = await api(`/offer/${code}`, pc.localDescription);
+  if (!r.ok) return;
+  const { gen } = await r.json();
+  const a = await waitFor(`/answer/${code}`, 20, v => v.gen === gen);
+  if (!a || live) return;
+  await pc.setRemoteDescription(a.answer);
+  await new Promise(r => setTimeout(r, 5000));
+}
+
+async function answerAgain() {
+  const o = await waitFor(`/join/${code}`, 20, v => v.gen > seen);
+  if (!o) return;
+  pc?.close();
+  await peer();
+  pc.ondatachannel = e => wire(e.channel, "b");
+  await pc.setRemoteDescription(o.offer);
+  await pc.setLocalDescription(await pc.createAnswer());
+  await gathered();
+  await api(`/answer/${code}`, { answer: pc.localDescription, gen: o.gen });
+  seen = o.gen;
+  await new Promise(r => setTimeout(r, 4000));
+}
+
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden && code && !live) lost();
+});
 
 async function host() {
   setup.textContent = "creating a game…";
@@ -228,23 +295,26 @@ async function host() {
   await gathered();
   const r = await api("/new", pc.localDescription);
   if (!r.ok) return setup.textContent = "could not reach the server";
-  const { code } = await r.json();
+  code = (await r.json()).code;
   setup.innerHTML = `<p>Your opponent joins with</p><h1>${code}</h1><p>or opens ${location.origin}/#${code}</p><p>waiting for them…</p>`;
-  const answer = await waitFor(`/answer/${code}`, 80);
+  const answer = await waitFor(`/answer/${code}`, 80, v => v.gen === 0);
   if (!answer) return setup.textContent = "nobody joined — reload to try again";
-  await pc.setRemoteDescription(answer);
+  await pc.setRemoteDescription(answer.answer);
 }
 
-async function join(code) {
+async function join(room) {
+  code = room;
   setup.textContent = "joining…";
   await peer();
   pc.ondatachannel = e => wire(e.channel, "b");
   const r = await api(`/join/${code}`);
   if (!r.ok) return setup.innerHTML = `<p>no game is waiting on <b>${code}</b></p><button onclick="location.hash=''; location.reload()">back</button>`;
-  await pc.setRemoteDescription(await r.json());
+  const { offer, gen } = await r.json();
+  seen = gen;
+  await pc.setRemoteDescription(offer);
   await pc.setLocalDescription(await pc.createAnswer());
   await gathered();
-  await api(`/answer/${code}`, pc.localDescription);
+  await api(`/answer/${code}`, { answer: pc.localDescription, gen });
   setup.textContent = "connecting…";
 }
 
@@ -362,7 +432,7 @@ function drop() {
 cv.onpointermove = e => { if (sel) { hover = snap(aim(world(e))); draw(); } };
 
 cv.onpointerdown = e => {
-  if (over || (!solo && (turn !== me || !dc))) return;
+  if (over || (!solo && (turn !== me || !live))) return;
   cv.setPointerCapture(e.pointerId);
   touch = e.pointerType !== "mouse";
   const here = world(e), pt = snap(aim(here));
