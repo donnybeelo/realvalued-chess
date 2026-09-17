@@ -11,12 +11,15 @@
   #setup h1 { font-size: 3rem; letter-spacing: .3em; margin: .3em 0 0 .3em; }
   input { font: inherit; padding: 6px; width: 5em; text-align: center; text-transform: uppercase; }
   button { font: inherit; padding: 6px 12px; margin-top: 6px; }
+  body.flip #msg { transform: rotate(180deg); }
 </style>
 <div id="setup">
   <button id="start">Host a game</button>
   <p>or join one</p>
   <input id="code" maxlength="4" size="4" autocapitalize="characters" autocomplete="off" placeholder="code">
   <button id="go">Join</button>
+  <p>or play both sides from the far seat</p>
+  <button id="across">Sit opposite</button>
 </div>
 <div id="msg"></div>
 <canvas id="c" width="640" height="640"></canvas>
@@ -25,7 +28,7 @@ import { N, HALF, start, legal, apply } from "./rules.js";
 
 const S = 80, cv = document.getElementById("c"), g = cv.getContext("2d"), msg = document.getElementById("msg");
 const GLYPH = { k: "♚", q: "♛", r: "♜", b: "♝", n: "♞", p: "♟" };
-let state = [], turn = "w", me = null, sel = null, hover = null, mask = null, takes = null, over = null, solo = false;
+let state = [], turn = "w", me = null, sel = null, hover = null, mask = null, takes = null, over = null, solo = false, swivel = false;
 
 const px = (x, y) => me === "b" ? [(N - x) * S, y * S] : [x * S, (N - y) * S];
 const world = e => {
@@ -35,7 +38,8 @@ const world = e => {
 };
 
 const LIFT = 1;
-const aim = ([x, y]) => touch ? [x, Math.min(Math.max(y + (me === "b" ? -LIFT : LIFT), 0), N)] : [x, y];
+const upside = () => me === "b" || (swivel && turn === "b");
+const aim = ([x, y]) => touch ? [x, Math.min(Math.max(y + (upside() ? -LIFT : LIFT), 0), N)] : [x, y];
 
 const lifts = new Map();
 const lift = ch => {
@@ -72,8 +76,10 @@ function glyph(p, a, b, tint) {
   g.fillStyle = tint ?? (p.c === "w" ? "#fff" : "#111");
   g.strokeStyle = p.c === "w" ? "#111" : "#fff";
   const y = b + lift(GLYPH[p.t]);
+  if (swivel && turn === "b") { g.save(); g.translate(a, b); g.rotate(Math.PI); g.translate(-a, -b); }
   g.strokeText(GLYPH[p.t], a, y);
   g.fillText(GLYPH[p.t], a, y);
+  if (swivel && turn === "b") g.restore();
 }
 
 function draw() {
@@ -196,6 +202,7 @@ function commit(id, x, y, r) {
   if (won) over = turn === "w" ? "b" : "w";
   sel = null;
   mask = takes = null;
+  face();
   say();
   draw();
 }
@@ -205,16 +212,25 @@ const say = () => msg.textContent = over
   : solo ? `${turn === "w" ? "white" : "black"} to move`
   : `you are ${me === "w" ? "white" : "black"} — ${turn === me ? "your move" : "their move"}`;
 
-if (location.hash === "#solo") {
+const face = () => document.body.classList.toggle("flip", swivel && turn === "b");
+
+const local = side => {
   solo = true;
   me = "w";
+  swivel = side === "b";
   state = start();
   setup.hidden = true;
+  face();
   say();
   draw();
-} else if (location.hash.length > 1) join(location.hash.slice(1).toUpperCase());
+};
+
+if (location.hash === "#solo") local("w");
+else if (location.hash === "#across") local("b");
+else if (location.hash.length > 1) join(location.hash.slice(1).toUpperCase());
 else {
   document.getElementById("start").onclick = host;
+  document.getElementById("across").onclick = () => local("b");
   const field = document.getElementById("code");
   document.getElementById("go").onclick = () => field.value.trim() && join(field.value.trim().toUpperCase());
   field.onkeydown = e => { if (e.key === "Enter") document.getElementById("go").click(); };
