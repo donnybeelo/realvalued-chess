@@ -3,17 +3,16 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Real-valued chess</title>
 <style>
-  body { margin: 0; background: #808080; color: #111; font: 14px system-ui; display: grid; place-content: center; place-items: center; gap: .5rem; min-height: 100svh; }
-  canvas { touch-action: none; width: min(96vw - 8rem, 100svh - 3rem); height: auto; border: 10px solid #fff; }
-  #board { display: flex; align-items: center; gap: .75rem; }
+  body { margin: 0; background: #808080; color: #111; font: 14px system-ui; display: grid; place-content: center; place-items: center; gap: .5rem; min-height: 100svh; overflow: hidden; }
+  canvas { touch-action: none; display: block; width: min(96vw - 20px, 100svh - 5.5rem); height: auto; border: 10px solid #fff; }
+  #board { position: relative; }
   #board[hidden] { display: none; }
-  #msg { width: 6rem; }
+  #msg { position: absolute; top: 100%; left: 0; right: 0; text-align: center; z-index: -1; }
   #setup { padding: 12px; max-width: 640px; text-align: center; }
   #setup p { margin: 8px 0 4px; }
   #setup h1 { font-size: 3rem; letter-spacing: .3em; margin: .3em 0 0 .3em; }
   input { font: inherit; padding: 6px; width: 5em; text-align: center; text-transform: uppercase; }
   button { font: inherit; padding: 6px 12px; margin-top: 6px; }
-  body.flip #msg { transform: rotate(180deg); }
 </style>
 <div id="setup">
   <button id="start">Host a game</button>
@@ -31,7 +30,17 @@
 import { N, HALF, start, legal, apply } from "./rules.js";
 
 const S = 80, cv = document.getElementById("c"), g = cv.getContext("2d"), msg = document.getElementById("msg");
-const GLYPH = { k: "♚", q: "♛", r: "♜", b: "♝", n: "♞", p: "♟" };
+const ART = {
+  p: "M63 31a13 13 0 1 1-26 0 13 13 0 1 1 26 0zM37 46h26l7 32H30zM24 78h52v10H24z",
+  r: "M30 24h9v8h8v-8h6v8h8v-8h9v18H30zM34 44h32l4 32H30zM24 78h52v11H24z",
+  n: "M27.5 80c0-12 5-19 11-26l-12-2c-4-1-4-6-1-9 7-9 14-15 23-19l-2-12 11 8c11 7 15 22 15 60zM24 80h52v9H24z",
+  b: "M55 12a5 5 0 1 1-10 0 5 5 0 1 1 10 0zM50 20c10 9 17 18 17 27 0 9-8 15-17 15s-17-6-17-15c0-9 7-18 17-27zM38 64h24l7 16H31zM26 80h48v9H26z",
+  q: "M26 24 34 44 42 22 50 44 58 22 66 44 74 24 70 58H30zM30 60h40l6 18H24zM24 78h52v10H24z",
+  k: "M46 10h8v8h8v8h-8v8h-8v-8h-8v-8h8zM32 36h36l-4 22H36zM28 60h44l5 18H23zM23 78h54v10H23z",
+};
+const carved = {};
+const art = t => carved[t] ??= new Path2D(ART[t]);
+let spin = 0, aimed = 0;
 let state = [], turn = "w", me = null, sel = null, hover = null, mask = null, takes = null, over = null, solo = false, swivel = false;
 
 const px = (x, y) => me === "b" ? [(N - x) * S, y * S] : [x * S, (N - y) * S];
@@ -44,15 +53,6 @@ const world = e => {
 const LIFT = 1;
 const upside = () => me === "b" || (swivel && turn === "b");
 const aim = ([x, y]) => touch ? [x, Math.min(Math.max(y + (upside() ? -LIFT : LIFT), 0), N)] : [x, y];
-
-const lifts = new Map();
-const lift = ch => {
-  if (!lifts.has(ch)) {
-    const m = g.measureText(ch);
-    lifts.set(ch, (m.actualBoundingBoxAscent - m.actualBoundingBoxDescent) / 2);
-  }
-  return lifts.get(ch);
-};
 
 const STEP = 0.05;
 const ROWS = 640;
@@ -116,17 +116,19 @@ function cells(list, style) {
 }
 
 function glyph(p, a, b, tint) {
-  g.font = '58px "DejaVu Sans", "Noto Sans Symbols 2", serif';
-  g.textAlign = "center";
-  g.textBaseline = "alphabetic";
-  g.lineWidth = 3;
+  const k = S / 100 * 0.92;
+  g.save();
+  g.translate(a, b);
+  if (spin) g.rotate(spin);
+  g.scale(k, k);
+  g.translate(-50, -50);
   g.fillStyle = tint ?? (p.c === "w" ? "#fff" : "#111");
   g.strokeStyle = p.c === "w" ? "#111" : "#fff";
-  const y = b + lift(GLYPH[p.t]);
-  if (swivel && turn === "b") { g.save(); g.translate(a, b); g.rotate(Math.PI); g.translate(-a, -b); }
-  g.strokeText(GLYPH[p.t], a, y);
-  g.fillText(GLYPH[p.t], a, y);
-  if (swivel && turn === "b") g.restore();
+  g.lineWidth = 3.5;
+  g.lineJoin = "round";
+  g.fill(art(p.t));
+  g.stroke(art(p.t));
+  g.restore();
 }
 
 function draw() {
@@ -251,7 +253,7 @@ function commit(id, x, y, r) {
   sel = null;
   mask = takes = null;
   face();
-  say();
+  if (!sliding) say();
   draw();
 }
 
@@ -263,7 +265,52 @@ const say = () => {
     : `you are ${me === "w" ? "white" : "black"} — ${turn === me ? "your move" : "their move"}`;
 };
 
-const face = () => document.body.classList.toggle("flip", swivel && turn === "b");
+const pose = (up, flip) => `translateY(${-up}px) rotate(${flip ? 180 : 0}deg)`;
+const floor = () => cv.getBoundingClientRect().bottom + msg.offsetHeight + 8 - innerHeight;
+let far = false, sliding = false;
+
+function slide() {
+  const flip = swivel && turn === "b";
+  if (flip === far) return rest();
+  far = flip;
+  sliding = true;
+  const board = cv.getBoundingClientRect().height, m = msg.offsetHeight;
+  const glide = () => msg.style.transition = "transform .3s ease-in-out";
+  glide();
+  msg.style.transform = pose(flip ? m + 8 : board - 8, !flip);
+  setTimeout(() => {
+    msg.style.transition = "none";
+    say();
+    sliding = false;
+    msg.style.transform = pose(flip ? board - 8 : m + 8, flip);
+    requestAnimationFrame(() => {
+      glide();
+      msg.style.transform = flip ? pose(board + m + 16, true) : pose(floor(), false);
+    });
+  }, 300);
+}
+
+const rest = () => requestAnimationFrame(() => {
+  const board = cv.getBoundingClientRect().height, m = msg.offsetHeight;
+  msg.style.transition = "none";
+  msg.style.transform = far ? pose(board + m + 16, true) : pose(floor(), false);
+});
+addEventListener("resize", rest);
+
+const face = () => {
+  slide();
+  const want = swivel && turn === "b" ? Math.PI : 0;
+  if (want === aimed) return;
+  const from = spin, t0 = performance.now();
+  aimed = want;
+  const step = now => {
+    const k = Math.min(1, (now - t0) / 650);
+    spin = from + (aimed - from) * (k < 0.5 ? 2 * k * k : 1 - 2 * (1 - k) ** 2);
+    draw();
+    if (k < 1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+};
 
 const local = side => {
   solo = true;
