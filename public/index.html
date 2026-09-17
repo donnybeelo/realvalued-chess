@@ -230,6 +230,12 @@ function play(pt) {
 
 let down = null, touch = false, fresh = false;
 
+function drop() {
+  sel = null;
+  mask = takes = null;
+  draw();
+}
+
 cv.onpointermove = e => { if (sel) { hover = aim(world(e)); draw(); } };
 
 cv.onpointerdown = e => {
@@ -240,9 +246,10 @@ cv.onpointerdown = e => {
   down = pt;
   const pick = state.find(p => p.c === (solo ? turn : me) && Math.max(Math.abs(p.x - here[0]), Math.abs(p.y - here[1])) < HALF);
   fresh = !!pick;
+  if (sel && pick?.id === sel.id) return drop();
   if (sel && !pick) {
     if (touch) { hover = pt; draw(); }
-    else play(hover && legal(state, sel.id, hover[0], hover[1]) ? hover : pt);
+    else if (!play(hover && legal(state, sel.id, hover[0], hover[1]) ? hover : pt)) drop();
     return;
   }
   sel = pick ?? null;
@@ -255,7 +262,7 @@ cv.onpointerup = e => {
   const up = aim(world(e));
   const dragged = down && Math.max(Math.abs(up[0] - down[0]), Math.abs(up[1] - down[1])) > 0.25;
   down = null;
-  if (sel && (dragged || (touch && !fresh))) play(up);
+  if (sel && (dragged || (touch && !fresh)) && !play(up)) drop();
 };
 
 cv.onpointercancel = () => { down = null; };
