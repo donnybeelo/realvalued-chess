@@ -8,6 +8,8 @@
   #board { position: relative; }
   #board[hidden] { display: none; }
   #msg { position: absolute; top: 100%; left: 0; right: 0; text-align: center; z-index: -1; }
+  #txt { display: inline-block; }
+  body.flip #txt { transform: rotate(180deg); }
   #setup { padding: 12px; max-width: 640px; text-align: center; }
   #setup p { margin: 8px 0 4px; }
   #setup h1 { font-size: 3rem; letter-spacing: .3em; margin: .3em 0 0 .3em; }
@@ -24,12 +26,12 @@
 </div>
 <div id="board" hidden>
   <canvas id="c" width="640" height="640"></canvas>
-  <div id="msg"></div>
+  <div id="msg"><span id="txt"></span></div>
 </div>
 <script type="module">
 import { N, HALF, start, legal, apply } from "./rules.js";
 
-const S = 80, cv = document.getElementById("c"), g = cv.getContext("2d"), msg = document.getElementById("msg");
+const S = 80, cv = document.getElementById("c"), g = cv.getContext("2d"), msg = document.getElementById("msg"), txt = document.getElementById("txt");
 const ART = {
   p: "M63 31a13 13 0 1 1-26 0 13 13 0 1 1 26 0zM37 46h26l7 32H30zM24 78h52v10H24z",
   r: "M30 24h9v8h8v-8h6v8h8v-8h9v18H30zM34 44h32l4 32H30zM24 78h52v11H24z",
@@ -166,10 +168,10 @@ async function peer() {
   } catch {}
   pc = new RTCPeerConnection(config);
   pc.onconnectionstatechange = () => {
-    if (pc.connectionState === "failed") msg.textContent = routed
+    if (pc.connectionState === "failed") txt.textContent = routed
       ? "could not reach your opponent — try again"
       : "no route out of this network was found";
-    else if (pc.connectionState === "connecting" && !dc?.readyState) msg.textContent = "connecting…";
+    else if (pc.connectionState === "connecting" && !dc?.readyState) txt.textContent = "connecting…";
   };
 }
 
@@ -208,12 +210,12 @@ function wire(channel, colour) {
     say();
     draw();
   };
-  dc.onclose = () => { over = over ?? "x"; msg.textContent = "opponent disconnected"; };
+  dc.onclose = () => { over = over ?? "x"; txt.textContent = "opponent disconnected"; };
   dc.onmessage = e => {
     const m = JSON.parse(e.data);
     const p = state.find(q => q.id === m.id);
     const r = turn !== me && p && p.c !== me && legal(state, m.id, m.x, m.y);
-    if (!r) { over = "x"; msg.textContent = "opponent sent an illegal move"; return; }
+    if (!r) { over = "x"; txt.textContent = "opponent sent an illegal move"; return; }
     commit(m.id, m.x, m.y, r);
   };
 }
@@ -259,14 +261,15 @@ function commit(id, x, y, r) {
 
 const say = () => {
   cv.style.borderColor = turn === "w" ? "#fff" : "#111";
-  msg.textContent = over
-    ? (over === me ? "you win" : over === "x" ? msg.textContent : "you lose")
+  txt.textContent = over
+    ? (over === me ? "you win" : over === "x" ? txt.textContent : "you lose")
     : solo ? `${turn === "w" ? "white" : "black"} to move`
     : `you are ${me === "w" ? "white" : "black"} — ${turn === me ? "your move" : "their move"}`;
 };
 
-const pose = (up, flip) => `translateY(${-up}px) rotate(${flip ? 180 : 0}deg)`;
+const pose = up => `translateY(${-up}px)`;
 const floor = () => cv.getBoundingClientRect().bottom + msg.offsetHeight + 8 - innerHeight;
+const ceiling = () => cv.getBoundingClientRect().bottom - 8;
 let far = false, sliding = false;
 
 function slide() {
@@ -275,25 +278,30 @@ function slide() {
   far = flip;
   sliding = true;
   const board = cv.getBoundingClientRect().height, m = msg.offsetHeight;
-  const glide = () => msg.style.transition = "transform .3s ease-in-out";
-  glide();
-  msg.style.transform = pose(flip ? m + 8 : board - 8, !flip);
+  const from = flip ? floor() : ceiling();
+  const hide = flip ? m + 8 : board - 8, show = flip ? board - 8 : m + 8;
+  const to = flip ? ceiling() : floor();
+  const out = Math.abs(hide - from), back = Math.abs(to - show);
+  const t1 = 600 * out / (out + back);
+  msg.style.transition = `transform ${t1}ms cubic-bezier(.42,0,1,1)`;
+  msg.style.transform = pose(hide);
   setTimeout(() => {
     msg.style.transition = "none";
     say();
     sliding = false;
-    msg.style.transform = pose(flip ? board - 8 : m + 8, flip);
+    document.body.classList.toggle("flip", flip);
+    msg.style.transform = pose(show);
     requestAnimationFrame(() => {
-      glide();
-      msg.style.transform = flip ? pose(board + m + 16, true) : pose(floor(), false);
+      msg.style.transition = `transform ${600 - t1}ms cubic-bezier(0,0,.58,1)`;
+      msg.style.transform = pose(to);
     });
-  }, 300);
+  }, t1);
 }
 
 const rest = () => requestAnimationFrame(() => {
   const board = cv.getBoundingClientRect().height, m = msg.offsetHeight;
   msg.style.transition = "none";
-  msg.style.transform = far ? pose(board + m + 16, true) : pose(floor(), false);
+  msg.style.transform = pose(far ? ceiling() : floor());
 });
 addEventListener("resize", rest);
 
