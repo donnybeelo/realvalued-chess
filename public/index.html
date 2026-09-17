@@ -8,10 +8,16 @@
   #msg { padding: 8px; height: 20px; }
   #setup { padding: 12px; max-width: 640px; text-align: center; }
   #setup p { margin: 8px 0 4px; }
-  textarea { width: 100%; font: 11px monospace; word-break: break-all; }
+  #setup h1 { font-size: 3rem; letter-spacing: .3em; margin: .3em 0 0 .3em; }
+  input { font: inherit; padding: 6px; width: 5em; text-align: center; text-transform: uppercase; }
   button { font: inherit; padding: 6px 12px; margin-top: 6px; }
 </style>
-<div id="setup"><button id="start">Host a game</button></div>
+<div id="setup">
+  <button id="start">Host a game</button>
+  <p>or join one</p>
+  <input id="code" maxlength="4" size="4" autocapitalize="characters" autocomplete="off" placeholder="code">
+  <button id="go">Join</button>
+</div>
 <div id="msg"></div>
 <canvas id="c" width="640" height="640"></canvas>
 <script type="module">
@@ -85,18 +91,26 @@ function draw() {
 }
 
 const setup = document.getElementById("setup");
-const box = document.getElementById("box");
-const pc = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }] });
-let dc = null;
+const API = location.origin + "/api";
+let pc = null, dc = null, routed = false;
 
-pc.onconnectionstatechange = () => {
-  if (pc.connectionState === "failed") msg.textContent = routed
-    ? "could not reach your opponent — try again, or a relay may be needed"
-    : "no public route was found for this device — that link only works on your own network";
-  else if (pc.connectionState === "connecting" && !dc?.readyState) msg.textContent = "connecting…";
-};
+const api = (path, body) => fetch(API + path, body ? { method: "POST", body: JSON.stringify(body) } : undefined);
 
-let routed = false;
+async function peer() {
+  let config = { iceServers: [{ urls: "stun:stun.l.google.com:19302" }] };
+  try {
+    const r = await api("/ice");
+    if (r.ok) config = await r.json();
+  } catch {}
+  pc = new RTCPeerConnection(config);
+  pc.onconnectionstatechange = () => {
+    if (pc.connectionState === "failed") msg.textContent = routed
+      ? "could not reach your opponent — try again"
+      : "no route out of this network was found";
+    else if (pc.connectionState === "connecting" && !dc?.readyState) msg.textContent = "connecting…";
+  };
+}
+
 const gathered = () => new Promise(r => {
   const cap = setTimeout(r, 10000);
   const stop = () => (clearTimeout(cap), r());
@@ -110,25 +124,15 @@ const gathered = () => new Promise(r => {
   pc.addEventListener("icegatheringstatechange", () => pc.iceGatheringState === "complete" && stop());
   if (pc.iceGatheringState === "complete") stop();
 });
-const pack = d => btoa(JSON.stringify(d));
-const unpack = s => JSON.parse(atob(s));
 
-function offer(label, text, then) {
-  setup.innerHTML = `<p>${label}</p><textarea readonly rows="3"></textarea><button>copy</button>`;
-  setup.querySelector("textarea").value = text;
-  setup.querySelector("button").onclick = e => { navigator.clipboard.writeText(text); e.target.textContent = "copied"; };
-  if (then) {
-    const box = document.createElement("div");
-    box.innerHTML = `<p>${then.label}</p><textarea rows="3"></textarea><button>connect</button>`;
-    const go = box.querySelector("button");
-    go.onclick = async () => {
-      go.disabled = true;
-      msg.textContent = "connecting…";
-      try { await then.run(box.querySelector("textarea").value.trim()); }
-      catch (err) { go.disabled = false; msg.textContent = "that reply was not usable: " + err.message; }
-    };
-    setup.append(box);
+async function waitFor(path, tries) {
+  for (let i = 0; i < tries; i++) {
+    const r = await api(path);
+    if (r.status === 200) return r.json();
+    if (r.status === 404) return null;
+    await new Promise(s => setTimeout(s, 1500));
   }
+  return null;
 }
 
 function wire(channel, colour) {
@@ -152,23 +156,31 @@ function wire(channel, colour) {
 }
 
 async function host() {
-  setup.textContent = "finding a route to you…";
+  setup.textContent = "creating a game…";
+  await peer();
   wire(pc.createDataChannel("game"), "w");
   await pc.setLocalDescription(await pc.createOffer());
   await gathered();
-  offer("Send this link to your opponent:", location.href.split("#")[0] + "#" + pack(pc.localDescription), {
-    label: "Then paste their reply here:",
-    run: async code => await pc.setRemoteDescription(unpack(code)),
-  });
+  const r = await api("/new", pc.localDescription);
+  if (!r.ok) return setup.textContent = "could not reach the server";
+  const { code } = await r.json();
+  setup.innerHTML = `<p>Your opponent joins with</p><h1>${code}</h1><p>or opens ${location.origin}/#${code}</p><p>waiting for them…</p>`;
+  const answer = await waitFor(`/answer/${code}`, 80);
+  if (!answer) return setup.textContent = "nobody joined — reload to try again";
+  await pc.setRemoteDescription(answer);
 }
 
-async function join(hash) {
-  setup.textContent = "finding a route to you…";
+async function join(code) {
+  setup.textContent = "joining…";
+  await peer();
   pc.ondatachannel = e => wire(e.channel, "b");
-  await pc.setRemoteDescription(unpack(hash));
+  const r = await api(`/join/${code}`);
+  if (!r.ok) return setup.innerHTML = `<p>no game is waiting on <b>${code}</b></p><button onclick="location.hash=''; location.reload()">back</button>`;
+  await pc.setRemoteDescription(await r.json());
   await pc.setLocalDescription(await pc.createAnswer());
   await gathered();
-  offer("Send this reply back to whoever invited you:", pack(pc.localDescription));
+  await api(`/answer/${code}`, pc.localDescription);
+  setup.textContent = "connecting…";
 }
 
 function commit(id, x, y, r) {
@@ -193,8 +205,13 @@ if (location.hash === "#solo") {
   setup.hidden = true;
   say();
   draw();
-} else if (location.hash.length > 1) join(location.hash.slice(1));
-else document.getElementById("start").onclick = host;
+} else if (location.hash.length > 1) join(location.hash.slice(1).toUpperCase());
+else {
+  document.getElementById("start").onclick = host;
+  const field = document.getElementById("code");
+  document.getElementById("go").onclick = () => field.value.trim() && join(field.value.trim().toUpperCase());
+  field.onkeydown = e => e.key === "Enter" && document.getElementById("go").click();
+}
 
 function play(pt) {
   const r = sel && legal(state, sel.id, pt[0], pt[1]);

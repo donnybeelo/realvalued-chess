@@ -1,0 +1,16 @@
+name = "rvchess"
+main = "worker.js"
+compatibility_date = "2026-01-01"
+
+routes = [{ pattern = "chess.donnybeelo.net", custom_domain = true }]
+
+[assets]
+directory = "public"
+
+[[durable_objects.bindings]]
+name = "LOBBY"
+class_name = "Lobby"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Lobby"]
