@@ -36,7 +36,7 @@ export function region(p, dx, dy) {
     case "b": return Math.abs(ax - ay) <= slack;
     case "q": return Math.min(ax, ay) <= slack || Math.abs(ax - ay) <= slack;
     case "n": return Math.abs(ax + ay - 3) <= HALF && Math.min(ax, ay) >= HALF && Math.max(ax, ay) <= 2.5;
-    case "k": return Math.max(ax, ay) <= 1;
+    case "k": return Math.max(ax, ay) <= 1.5;
     case "p": {
       const f = fwd(p, dy);
       const far = p.c === "w" ? p.y <= 2 : p.y >= N - 2;
@@ -164,5 +164,9 @@ if (import.meta.main) {
   apply(ps2, at2(3.5, 1.5), 3.5, 3.5);
   ok(legal(ps2, at2(2.5, 0.5), 4.5, 2.5), "bishop threads the opened file");
   ok(legal(ps2, at2(2.5, 0.5), 4.75, 2.3), "a steeper line threads the gap the diamond leaves");
+  const walk = [{ id: 0, c: "w", t: "k", x: 4.5, y: 7.5 }, { id: 1, c: "b", t: "p", x: 3.5, y: 6.5 }];
+  ok(legal(walk, 0, 4.2, 6.2), "a king may stand anywhere in the square beside it");
+  ok(!legal(walk, 0, 6.2, 5.8), "but not reach the square past that");
+  ok(legal(walk, 0, 3.5, 6.5)?.cap?.id === 1, "and takes its diagonal neighbour");
   console.log("ok");
 }
