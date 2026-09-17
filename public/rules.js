@@ -29,14 +29,13 @@ export function attacks(p, dx, dy) {
 
 export function region(p, dx, dy) {
   const ax = Math.abs(dx), ay = Math.abs(dy);
-  if (ax < E && ay < E) return false;
-  const slack = Math.min(HALF, Math.max(ax, ay) / 2);
+  if (Math.max(ax, ay) < HALF - E) return false;
   switch (p.t) {
-    case "r": return Math.min(ax, ay) <= slack;
-    case "b": return Math.abs(ax - ay) <= slack;
-    case "q": return Math.min(ax, ay) <= slack || Math.abs(ax - ay) <= slack;
+    case "r": return Math.min(ax, ay) <= HALF;
+    case "b": return Math.abs(ax - ay) <= HALF;
+    case "q": return Math.min(ax, ay) <= HALF || Math.abs(ax - ay) <= HALF;
     case "n": return Math.abs(ax + ay - 3) <= HALF && Math.min(ax, ay) >= HALF && Math.max(ax, ay) <= 2.5;
-    case "k": return Math.max(ax, ay) <= 1.5;
+    case "k": return Math.max(ax, ay) <= 1;
     case "p": {
       const f = fwd(p, dy);
       const far = p.c === "w" ? p.y <= 2 : p.y >= N - 2;
@@ -67,7 +66,7 @@ function hits(ax, ay, bx, by, q) {
 export function legal(ps, id, x, y) {
   const p = ps.find(q => q.id === id);
   if (!p) return null;
-  if (x < BOX || x > N - BOX || y < BOX || y > N - BOX) return null;
+  if (x < HALF - E || x > N - HALF + E || y < HALF - E || y > N - HALF + E) return null;
   if (!region(p, x - p.x, y - p.y)) return null;
 
   let cap = null;
@@ -78,6 +77,11 @@ export function legal(ps, id, x, y) {
     cap = q;
   }
   if (p.t === "p" && (cap ? !attacks(p, cap.x - p.x, cap.y - p.y) : Math.abs(x - p.x) > HALF)) return null;
+  for (const q of ps) {
+    if (q.id === id || q === cap) continue;
+    if (q.c !== p.c && !(p.t === "p" && q.t === "p")) continue;
+    if (Math.max(Math.abs(q.x - x), Math.abs(q.y - y)) < HALF - E) return null;
+  }
   if (p.t !== "n") {
     for (const q of ps) {
       if (q.id === id || q === cap) continue;
@@ -113,9 +117,9 @@ if (import.meta.main) {
   ok(!legal(ps, at(1.5, 0.5), 4.0, 3.0), "knight band excludes the far corner");
   const open = [{ id: 0, c: "w", t: "r", x: 4.5, y: 4.5 }, { id: 1, c: "w", t: "b", x: 2.5, y: 4.5 }];
   ok(!legal(open, 0, 4.8, 4.8), "rook cannot shuffle diagonally off its square");
-  ok(!legal(open, 0, 5.0, 5.0), "nor take a clean 45 degree step between two neighbours");
   ok(legal(open, 1, 3.25, 5.25), "a short move along the true diagonal is fine");
-  ok(!legal(open, 1, 3.25, 4.8), "but a short move has to be nearly exact");
+  ok(!legal(open, 1, 3.25, 4.7), "but the diagonal band is the same width at any range");
+  ok(!legal(open, 1, 5.5, 6.0), "including far down the board");
   ok(legal(open, 0, 5.5, 4.9), "but may drift while travelling a square");
   ok(!legal(open, 1, 2.9, 4.6), "bishop cannot creep sideways off its square");
   ok(legal(open, 1, 3.5, 5.3), "bishop travels on the diagonal band");
@@ -127,11 +131,11 @@ if (import.meta.main) {
   ok(legal(close, 0, 0.5, 1.4)?.cap?.id === 1, "a rook takes an enemy that has crept closer than a square");
   ok(!legal(close, 0, 1.1, 1.1), "but still cannot step diagonally to do it");
   const snipe = [{ id: 0, c: "w", t: "b", x: 5.5, y: 0.5 }, { id: 1, c: "b", t: "p", x: 0.5, y: 6.5 }];
-  ok(legal(snipe, 0, 0.35, 6.1), "bishop may settle in the corner gap beside a pawn diamond");
+  ok(!legal(snipe, 0, 0.35, 6.1), "bishop cannot settle in the margin beside the board edge");
   ok(legal(snipe, 0, 0.5, 5.5), "the same diagonal reaches the square below it");
   const edge = [{ id: 0, c: "w", t: "r", x: 3.5, y: 2.0 }];
-  ok(legal(edge, 0, 3.5, 0.35), "a piece may sit on the board edge");
-  ok(!legal(edge, 0, 3.5, 0.2), "but not hang off it");
+  ok(legal(edge, 0, 3.5, 0.5), "a piece may sit half a square from the edge");
+  ok(!legal(edge, 0, 3.5, 0.4), "but no closer");
   const grab = [{ id: 0, c: "b", t: "p", x: 6.5, y: 6.5 }, { id: 1, c: "b", t: "p", x: 7.5, y: 6.5 }, { id: 2, c: "w", t: "b", x: 7.5, y: 5.5 }];
   ok(legal(grab, 0, 7.5, 5.5)?.cap?.t === "b", "pawn takes the piece on its diagonal");
   ok(legal(grab, 0, 7.2, 5.7)?.cap?.t === "b", "and has room beside it to land in");
@@ -165,9 +169,19 @@ if (import.meta.main) {
   const drift = [{ id: 0, c: "w", t: "p", x: 4.5, y: 3.4 }, { id: 1, c: "b", t: "p", x: 5.4, y: 4.55 }];
   ok(legal(drift, 0, 5.4, 4.35)?.cap?.id === 1, "a drifted pawn still takes what it attacks");
   const walk = [{ id: 0, c: "w", t: "k", x: 4.5, y: 7.5 }, { id: 1, c: "b", t: "p", x: 3.5, y: 6.5 }];
-  ok(legal(walk, 0, 4.2, 6.2), "a king may stand anywhere in the square beside it");
-  ok(!legal(walk, 0, 6.2, 5.8), "but not reach the square past that");
+  ok(legal(walk, 0, 4.2, 6.5), "a king may step a square in any direction");
+  ok(!legal(walk, 0, 4.2, 6.2), "but not a square and a half");
   ok(legal(walk, 0, 3.5, 6.5)?.cap?.id === 1, "and takes its diagonal neighbour");
+  const step = [{ id: 0, c: "w", t: "k", x: 4.5, y: 4.5 }, { id: 1, c: "w", t: "r", x: 0.5, y: 0.5 }];
+  ok(!legal(step, 0, 4.8, 4.7), "no piece may shuffle within half a square of where it stands");
+  ok(legal(step, 0, 5.0, 4.5), "half a square is far enough");
+  ok(!legal(step, 1, 0.5, 0.9), "and the rule holds down the rank");
+  const crowd = [{ id: 0, c: "w", t: "p", x: 4.5, y: 1.5 }, { id: 1, c: "b", t: "p", x: 5.2, y: 2.3 }];
+  ok(!legal(crowd, 0, 4.8, 2.1), "a pawn cannot crowd within half a square of another pawn");
+  ok(legal(crowd, 0, 5.2, 2.3)?.cap?.id === 1, "but may take it");
+  const pals = [{ id: 0, c: "w", t: "r", x: 4.5, y: 4.5 }, { id: 1, c: "w", t: "n", x: 4.5, y: 6.5 }, { id: 2, c: "b", t: "n", x: 6.5, y: 4.5 }];
+  ok(!legal(pals, 0, 4.5, 6.2), "no piece may crowd a friend");
+  ok(legal(pals, 0, 6.2, 4.5), "but may crowd an enemy");
   const graze = [{ id: 0, c: "w", t: "q", x: 7.0, y: 5.6 }, { id: 1, c: "b", t: "p", x: 3.0, y: 5.0 }];
   ok(legal(graze, 0, 3.0, 5.2)?.cap?.id === 1, "a queen takes a pawn whose body reaches into her band");
   console.log("ok");
