@@ -7,8 +7,8 @@
   canvas { touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; display: block; width: min(96vw - 20px, 100svh - 5.5rem); height: auto; border: 10px solid #fff; }
   #board { position: relative; }
   #board[hidden] { display: none; }
-  #msg { position: absolute; top: 100%; left: 0; right: 0; text-align: center; z-index: -1; }
-  #txt { display: inline-block; }
+  #msg, #msg2 { position: absolute; top: 100%; left: 0; right: 0; text-align: center; z-index: -1; }
+  #txt, #txt2 { display: inline-block; }
   body.flip #txt { transform: rotate(180deg); }
   #setup { padding: 12px; max-width: 640px; text-align: center; }
   #setup p { margin: 8px 0 4px; }
@@ -27,11 +27,12 @@
 <div id="board" hidden>
   <canvas id="c" width="640" height="640"></canvas>
   <div id="msg"><span id="txt"></span></div>
+  <div id="msg2" hidden><span id="txt2"></span></div>
 </div>
 <script type="module">
 import { N, HALF, start, legal, apply } from "./rules.js";
 
-const S = 80, cv = document.getElementById("c"), g = cv.getContext("2d"), msg = document.getElementById("msg"), txt = document.getElementById("txt");
+const S = 80, cv = document.getElementById("c"), g = cv.getContext("2d"), msg = document.getElementById("msg"), txt = document.getElementById("txt"), msg2 = document.getElementById("msg2"), txt2 = document.getElementById("txt2");
 const ART = {
   p: "M64 26a14 14 0 1 1-28 0 14 14 0 1 1 28 0zM37 44h26l7 34H30zM24 78h52v10H24z",
   r: "M30 12h9v8h8v-8h6v8h8v-8h9v20H30zM34 34h32l5 44H29zM24 78h52v10H24z",
@@ -341,10 +342,20 @@ function commit(id, x, y, r) {
 const say = () => {
   cv.style.borderColor = turn === "w" ? "#fff" : "#111";
   txt.textContent = over
-    ? (over === me ? "you win" : over === "x" ? txt.textContent : "you lose")
+    ? (solo ? (over === "x" ? txt.textContent : `${over === "w" ? "white" : "black"} wins`)
+      : over === me ? "you win" : over === "x" ? txt.textContent : "you lose")
     : solo ? `${turn === "w" ? "white" : "black"} to move`
     : `you are ${me === "w" ? "white" : "black"} — ${turn === me ? "your move" : "their move"}`;
+  both();
 };
+
+function both() {
+  msg2.hidden = !(swivel && over && over !== "x");
+  if (msg2.hidden) return;
+  txt2.textContent = txt.textContent;
+  txt2.style.transform = far ? "" : "rotate(180deg)";
+  msg2.style.transform = pose(far ? floor() : ceiling());
+}
 
 const pose = up => `translateY(${-up}px)`;
 const floor = () => cv.getBoundingClientRect().bottom + msg.offsetHeight + 8 - innerHeight;
@@ -381,6 +392,7 @@ const rest = () => requestAnimationFrame(() => {
   const board = cv.getBoundingClientRect().height, m = msg.offsetHeight;
   msg.style.transition = "none";
   msg.style.transform = pose(far ? ceiling() : floor());
+  both();
 });
 addEventListener("resize", rest);
 
