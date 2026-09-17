@@ -34,7 +34,7 @@ export function region(p, dx, dy) {
     case "r": return Math.min(ax, ay) <= HALF;
     case "b": return Math.abs(ax - ay) <= HALF;
     case "q": return Math.min(ax, ay) <= HALF || Math.abs(ax - ay) <= HALF;
-    case "n": return Math.abs(ax + ay - 3) <= HALF && Math.min(ax, ay) >= HALF && Math.max(ax, ay) <= 2.5;
+    case "n": return Math.min(ax, ay) >= HALF && ax + ay >= 2 - E && ax + ay <= 3 + E;
     case "k": return Math.max(ax, ay) <= 1;
     case "p": {
       const f = fwd(p, dy);
@@ -76,6 +76,7 @@ export function legal(ps, id, x, y) {
     if (q.c === p.c || cap) return null;
     cap = q;
   }
+  if (cap && p.t !== "p" && !region(p, cap.x - p.x, cap.y - p.y)) return null;
   if (p.t === "p" && (cap ? !attacks(p, cap.x - p.x, cap.y - p.y) : Math.abs(x - p.x) > HALF)) return null;
   for (const q of ps) {
     if (q.id === id || q === cap) continue;
@@ -112,7 +113,9 @@ if (import.meta.main) {
   ok(legal(ps, at(5.5, 0.5), 3.0, 3.0), "bishop slips past its own pawn into the open file");
   ok(legal(ps, at(5.5, 0.5), 3.25, 2.3), "a steeper line slips past the diamond corners");
   apply(ps, at(4.5, 3.5), 4.5, 1.5);
-  ok(legal(ps, at(1.5, 0.5), 0.5, 3), "knight jumps");
+  ok(legal(ps, at(1.5, 0.5), 0.7, 2.6), "knight jumps");
+  ok(!legal(ps, at(1.5, 0.5), 0.5, 3), "but not past the far edge of its triangle");
+  ok(!legal(ps, at(1.5, 0.5), 2.2, 1.2), "nor into the near corner it skips over");
   ok(!legal(ps, at(1.5, 0.5), 1.5, 2.5), "knight region excludes straight");
   ok(!legal(ps, at(1.5, 0.5), 4.0, 3.0), "knight band excludes the far corner");
   const open = [{ id: 0, c: "w", t: "r", x: 4.5, y: 4.5 }, { id: 1, c: "w", t: "b", x: 2.5, y: 4.5 }];
@@ -183,6 +186,10 @@ if (import.meta.main) {
   ok(!legal(pals, 0, 4.5, 6.2), "no piece may crowd a friend");
   ok(legal(pals, 0, 6.2, 4.5), "but may crowd an enemy");
   const graze = [{ id: 0, c: "w", t: "q", x: 7.0, y: 5.6 }, { id: 1, c: "b", t: "p", x: 3.0, y: 5.0 }];
-  ok(legal(graze, 0, 3.0, 5.2)?.cap?.id === 1, "a queen takes a pawn whose body reaches into her band");
+  ok(!legal(graze, 0, 3.2, 5.2)?.cap, "a queen cannot take a pawn whose centre sits outside her band");
+  graze[1].y = 5.4;
+  ok(legal(graze, 0, 3.0, 5.4)?.cap?.id === 1, "but takes it once its centre is on her line");
+  const nudge = [{ id: 0, c: "w", t: "b", x: 6.5, y: 6.5 }, { id: 1, c: "b", t: "r", x: 6.5, y: 7.5 }];
+  ok(!legal(nudge, 0, 6.8, 7.2)?.cap, "a bishop cannot lean off its diagonal to take the piece above it");
   console.log("ok");
 }
