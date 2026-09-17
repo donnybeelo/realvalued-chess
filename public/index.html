@@ -51,15 +51,11 @@ const STEP = 0.05;
 function buildMask() {
   mask = [];
   takes = [];
-  for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
-    const c = legal(state, sel.id, i + 0.5, j + 0.5);
-    if (!c) continue;
-    for (let y = j + STEP / 2; y < j + 1; y += STEP)
-      for (let x = i + STEP / 2; x < i + 1; x += STEP) {
-        const r = legal(state, sel.id, x, y);
-        if (r) (r.cap ? takes : mask).push(px(x, y));
-      }
-  }
+  for (let y = STEP / 2; y < N; y += STEP)
+    for (let x = STEP / 2; x < N; x += STEP) {
+      const r = legal(state, sel.id, x, y);
+      if (r) (r.cap ? takes : mask).push(px(x, y));
+    }
 }
 
 function cells(list, style) {
