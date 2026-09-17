@@ -39,9 +39,10 @@ export default {
     if (req.method === "OPTIONS") return json(null, 204);
     if (path === "/api/ice") {
       const servers = [{ urls: "stun:stun.l.google.com:19302" }];
-      if (env.TURN_APP && env.TURN_KEY) {
+      const app = (env.TURN_APP || "").trim().split(".")[0];
+      if (app && env.TURN_KEY) {
         try {
-          const r = await fetch(`https://${env.TURN_APP}.metered.live/api/v1/turn/credentials?apiKey=${env.TURN_KEY}`);
+          const r = await fetch(`https://${app}.metered.live/api/v1/turn/credentials?apiKey=${env.TURN_KEY.trim()}`);
           if (r.ok) servers.push(...await r.json());
         } catch {}
       }
