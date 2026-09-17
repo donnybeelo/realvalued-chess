@@ -9,7 +9,7 @@
   #board { position: relative; }
   #graves { position: fixed; inset: 4px 10px auto; display: flex; flex-direction: column; justify-content: space-between; height: calc(100svh - 8px); pointer-events: none; }
   .tray { display: flex; gap: 2px; height: 24px; }
-  #lostw { transform: rotate(180deg); }
+  body.hot #lostw { transform: rotate(180deg); }
   #tools { position: fixed; right: 10px; bottom: 10px; display: flex; gap: .5rem; }
   #tools[hidden], #again[hidden] { display: none; }
   #board[hidden] { display: none; }
@@ -66,7 +66,7 @@ const ART = {
 const carved = {};
 const art = t => carved[t] ??= new Path2D(ART[t]);
 
-let spin = 0, aimed = 0, prey = null;
+let spin = 0, aimed = 0, prey = null, flying = null;
 let state = [], turn = "w", me = null, sel = null, hover = null, mask = null, takes = null, over = null, solo = false, swivel = false;
 
 const px = (x, y) => me === "b" ? [(N - x) * S, y * S] : [x * S, (N - y) * S];
@@ -182,7 +182,10 @@ function draw() {
   if (mask) cells(mask, "rgba(255,255,255,0.35)");
   const lift = sel && hover ? legal(state, sel.id, hover[0], hover[1]) : null;
   for (const p of state) {
-    const [a, b] = px(p.x, p.y);
+    const was = flying && (p.id === flying.id ? flying.from : p.id === flying.rid ? flying.rfrom : null);
+    const [a, b] = was
+      ? px(was[0] + (p.x - was[0]) * flying.k, was[1] + (p.y - was[1]) * flying.k)
+      : px(p.x, p.y);
     if (sel && hover && (p.id === sel.id || p === lift?.swap?.rook)) continue;
     glyph(p, a, b);
     if (sel && prey?.has(p.id)) {
@@ -321,7 +324,7 @@ function wire(channel, colour) {
     const p = state.find(q => q.id === m.id);
     const r = turn !== me && p && p.c !== me && legal(state, m.id, m.x, m.y);
     if (!r) { over = "x"; txt.textContent = "opponent sent an illegal move"; return; }
-    commit(m.id, m.x, m.y, r);
+    commit(m.id, m.x, m.y, r, true);
   };
 }
 
@@ -407,7 +410,19 @@ async function join(room) {
   setup.textContent = "connecting…";
 }
 
-function commit(id, x, y, r) {
+function fly() {
+  if (!flying) return;
+  const k = Math.min(1, (performance.now() - flying.t0) / 260);
+  flying.k = 1 - (1 - k) ** 3;
+  if (k >= 1) flying = null;
+  draw();
+  if (k < 1) requestAnimationFrame(fly);
+}
+
+function commit(id, x, y, r, glide) {
+  const mover = state.find(q => q.id === id);
+  const from = [mover.x, mover.y];
+  const rfrom = r?.swap ? [r.swap.rook.x, r.swap.rook.y] : null;
   past.push({ board: state.map(p => ({ ...p })), turn, fallen: dead.slice() });
   if (r?.cap) dead.push({ c: r.cap.c, t: r.cap.t });
   const won = apply(state, id, x, y, r);
@@ -418,6 +433,10 @@ function commit(id, x, y, r) {
   mask = takes = null;
   face();
   if (!sliding) say();
+  if (glide) {
+    flying = { id, from, rid: r?.swap?.rook.id, rfrom, t0: performance.now(), k: 0 };
+    requestAnimationFrame(fly);
+  }
   draw();
   offer();
 }
@@ -550,6 +569,7 @@ const local = side => {
   solo = true;
   me = "w";
   swivel = side === "b";
+  document.body.classList.toggle("hot", swivel);
   state = start();
   setup.hidden = true;
   board.hidden = false;
