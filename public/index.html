@@ -65,7 +65,7 @@ const ART = {
 const carved = {};
 const art = t => carved[t] ??= new Path2D(ART[t]);
 
-let spin = 0, aimed = 0;
+let spin = 0, aimed = 0, prey = null;
 let state = [], turn = "w", me = null, sel = null, hover = null, mask = null, takes = null, over = null, solo = false, swivel = false;
 
 const px = (x, y) => me === "b" ? [(N - x) * S, y * S] : [x * S, (N - y) * S];
@@ -110,6 +110,12 @@ function buildMask() {
       prev = k;
     }
     if (prev) band(prev, from, N, y);
+  }
+  prey = new Set();
+  for (const q of state) {
+    if (q.c === sel.c) continue;
+    const spots = [[q.x, q.y], [q.x + 0.3, q.y], [q.x - 0.3, q.y], [q.x, q.y + 0.3], [q.x, q.y - 0.3]];
+    if (spots.some(([x, y]) => legal(state, sel.id, x, y)?.cap === q)) prey.add(q.id);
   }
 }
 
@@ -168,6 +174,11 @@ function draw() {
     const [a, b] = px(p.x, p.y);
     if (sel && hover && (p.id === sel.id || p === lift?.swap?.rook)) continue;
     glyph(p, a, b);
+    if (sel && prey?.has(p.id)) {
+      g.globalAlpha = 0.45;
+      glyph(p, a, b, "#f33");
+      g.globalAlpha = 1;
+    }
     if (sel && sel.id === p.id) { g.strokeStyle = "#ff0"; g.lineWidth = 2; g.strokeRect(a - S / 2, b - S / 2, S, S); }
   }
   if (sel && hover) {
