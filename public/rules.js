@@ -1,5 +1,10 @@
 export const N = 8, HALF = 0.5, BOX = 0.35, PAWN = HALF;
 const body = q => q.t === "p" ? PAWN : BOX;
+const dia = q => q.t === "p";
+const inside = (q, x, y) => {
+  const a = Math.abs(q.x - x), b = Math.abs(q.y - y);
+  return (dia(q) ? a + b : Math.max(a, b)) < body(q) - E;
+};
 const E = 1e-9;
 const ORDER = ["r", "n", "b", "q", "k", "b", "n", "r"];
 
@@ -44,8 +49,11 @@ export function region(p, dx, dy) {
 
 function hits(ax, ay, bx, by, q) {
   const h = body(q);
+  const axes = dia(q)
+    ? [[ax + ay, bx + by, q.x + q.y], [ax - ay, bx - by, q.x - q.y]]
+    : [[ax, bx, q.x], [ay, by, q.y]];
   let t0 = 0, t1 = 1;
-  for (const [a, b, c] of [[ax, bx, q.x], [ay, by, q.y]]) {
+  for (const [a, b, c] of axes) {
     const d = b - a;
     if (Math.abs(d) < E) { if (a <= c - h || a >= c + h) return false; continue; }
     let s = (c - h - a) / d, e = (c + h - a) / d;
@@ -65,7 +73,7 @@ export function legal(ps, id, x, y) {
   let cap = null;
   for (const q of ps) {
     if (q.id === id) continue;
-    if (Math.max(Math.abs(q.x - x), Math.abs(q.y - y)) >= body(q) - E) continue;
+    if (!inside(q, x, y)) continue;
     if (q.c === p.c || cap) return null;
     cap = q;
   }
@@ -100,7 +108,7 @@ if (import.meta.main) {
   ok(!legal(ps, at(0.5, 0.5), 0.5, 3), "rook blocked by own pawn");
   apply(ps, at(4.5, 1.5), 4.5, 3.5);
   ok(legal(ps, at(5.5, 0.5), 3.0, 3.0), "bishop slips past its own pawn into the open file");
-  ok(!legal(ps, at(5.5, 0.5), 3.25, 2.3), "a steeper line still clips a pawn");
+  ok(legal(ps, at(5.5, 0.5), 3.25, 2.3), "a steeper line slips past the diamond corners");
   apply(ps, at(4.5, 3.5), 4.5, 1.5);
   ok(legal(ps, at(1.5, 0.5), 0.5, 3), "knight jumps");
   ok(!legal(ps, at(1.5, 0.5), 1.5, 2.5), "knight region excludes straight");
@@ -121,7 +129,7 @@ if (import.meta.main) {
   ok(legal(close, 0, 0.5, 1.4)?.cap?.id === 1, "a rook takes an enemy that has crept closer than a square");
   ok(!legal(close, 0, 1.1, 1.1), "but still cannot step diagonally to do it");
   const snipe = [{ id: 0, c: "w", t: "b", x: 5.5, y: 0.5 }, { id: 1, c: "b", t: "p", x: 0.5, y: 6.5 }];
-  ok(!legal(snipe, 0, 0.35, 6.1), "bishop cannot clip a pawn whose centre is off its band");
+  ok(legal(snipe, 0, 0.35, 6.1), "bishop may settle in the corner gap beside a pawn diamond");
   ok(legal(snipe, 0, 0.5, 5.5), "the same diagonal reaches the square below it");
   const edge = [{ id: 0, c: "w", t: "r", x: 3.5, y: 2.0 }];
   ok(legal(edge, 0, 3.5, 0.35), "a piece may sit on the board edge");
@@ -155,6 +163,6 @@ if (import.meta.main) {
   const at2 = (x, y) => ps2.find(q => Math.abs(q.x - x) < E && Math.abs(q.y - y) < E).id;
   apply(ps2, at2(3.5, 1.5), 3.5, 3.5);
   ok(legal(ps2, at2(2.5, 0.5), 4.5, 2.5), "bishop threads the opened file");
-  ok(!legal(ps2, at2(2.5, 0.5), 4.75, 2.3), "too steep a line clips the pawn box");
+  ok(legal(ps2, at2(2.5, 0.5), 4.75, 2.3), "a steeper line threads the gap the diamond leaves");
   console.log("ok");
 }
