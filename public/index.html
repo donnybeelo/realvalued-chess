@@ -210,7 +210,7 @@ else {
   document.getElementById("start").onclick = host;
   const field = document.getElementById("code");
   document.getElementById("go").onclick = () => field.value.trim() && join(field.value.trim().toUpperCase());
-  field.onkeydown = e => e.key === "Enter" && document.getElementById("go").click();
+  field.onkeydown = e => { if (e.key === "Enter") document.getElementById("go").click(); };
 }
 
 function play(pt) {
