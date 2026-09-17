@@ -6,6 +6,7 @@
   body { margin: 0; -webkit-user-select: none; user-select: none; background: #808080; color: #111; font: 14px system-ui; display: grid; place-content: center; place-items: center; gap: .5rem; min-height: 100svh; overflow: hidden; }
   canvas { touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; display: block; width: min(96vw - 20px, 100svh - 5.5rem); height: auto; border: 10px solid #fff; }
   #board { position: relative; }
+  #tools { position: fixed; right: 10px; bottom: 10px; display: flex; gap: .5rem; }
   #board[hidden] { display: none; }
   #msg, #msg2 { position: absolute; top: 100%; left: 0; right: 0; text-align: center; z-index: -1; }
   #txt, #txt2 { display: inline-block; }
@@ -29,10 +30,16 @@
   <div id="msg"><span id="txt"></span></div>
   <div id="msg2" hidden><span id="txt2"></span></div>
 </div>
+<div id="tools" hidden>
+  <button id="undo">undo</button>
+  <button id="again" hidden>play again</button>
+</div>
 <script type="module">
 import { N, HALF, start, legal, apply } from "./rules.js";
 
 const S = 80, cv = document.getElementById("c"), g = cv.getContext("2d"), msg = document.getElementById("msg"), txt = document.getElementById("txt"), msg2 = document.getElementById("msg2"), txt2 = document.getElementById("txt2");
+const tools = document.getElementById("tools"), undoer = document.getElementById("undo"), againer = document.getElementById("again");
+const past = [];
 const ART = {
   p: "M64 26a14 14 0 1 1-28 0 14 14 0 1 1 28 0zM37 44h26l7 34H30zM24 78h52v10H24z",
   r: "M30 12h9v8h8v-8h6v8h8v-8h9v20H30zM34 34h32l5 44H29zM24 78h52v10H24z",
@@ -119,8 +126,8 @@ function cells(list, style) {
   for (const [a, b, w, h] of list) g.fillRect(a, b, w, h);
 }
 
-function glyph(p, a, b, tint) {
-  const k = S / 100 * 0.92;
+function glyph(p, a, b, tint, grow = 1) {
+  const k = S / 100 * 0.92 * grow;
   g.save();
   g.translate(a, b);
   if (spin) g.rotate(spin);
@@ -144,7 +151,7 @@ function draw() {
   if (mask) cells(mask, "rgba(255,255,255,0.35)");
   for (const p of state) {
     const [a, b] = px(p.x, p.y);
-    glyph(p, a, b);
+    if (!(sel && hover && p.id === sel.id)) glyph(p, a, b);
     if (sel && sel.id === p.id) { g.strokeStyle = "#ff0"; g.lineWidth = 2; g.strokeRect(a - S / 2, b - S / 2, S, S); }
   }
   if (sel && hover) {
@@ -158,10 +165,32 @@ function draw() {
       g.arc(cx, cy, S * 0.46, 0, 2 * Math.PI);
       g.stroke();
     }
-    g.globalAlpha = 0.85;
-    if (r?.swap) glyph(r.swap.rook, ...px(r.swap.rx, r.swap.ry), "#3f3");
-    glyph(sel, a, b, r ? (r.cap ? "#fb0" : "#3f3") : "#f33");
+    if (touch && grip) {
+      const [gx, gy] = px(grip[0], grip[1]);
+      g.strokeStyle = "rgba(255,255,255,0.8)";
+      g.lineWidth = 3;
+      g.setLineDash([6, 6]);
+      g.beginPath();
+      g.moveTo(gx, gy);
+      g.lineTo(a, b);
+      g.stroke();
+      g.setLineDash([]);
+      g.beginPath();
+      g.arc(gx, gy, 7, 0, 2 * Math.PI);
+      g.stroke();
+    }
+    const tint = r ? (r.cap ? "#fb0" : "#3f3") : "#f33";
+    g.globalAlpha = 0.7;
+    if (r?.swap) glyph(r.swap.rook, ...px(r.swap.rx, r.swap.ry), "#3f3", 1.25);
+    glyph(sel, a, b, tint, 1.25);
     g.globalAlpha = 1;
+    g.fillStyle = tint;
+    g.strokeStyle = "#111";
+    g.lineWidth = 2;
+    g.beginPath();
+    g.arc(a, b, 5, 0, 2 * Math.PI);
+    g.fill();
+    g.stroke();
   }
 }
 
@@ -219,6 +248,7 @@ function wire(channel, colour) {
     setup.hidden = true;
     board.hidden = false;
     live = true;
+    offer();
     me = colour;
     if (!state.length) { state = start(); turn = "w"; }
     else if (me === "w") dc.send(JSON.stringify({ sync: state, turn, over }));
@@ -229,6 +259,15 @@ function wire(channel, colour) {
   dc.onclose = () => { if (dc === channel) lost(); };
   dc.onmessage = e => {
     const m = JSON.parse(e.data);
+    if (m.undo === "ask") {
+      const yes = confirm("Your opponent asks to take back the last move. Allow?");
+      dc.send(JSON.stringify({ undo: yes ? "yes" : "no" }));
+      if (yes) rollback();
+      return;
+    }
+    if (m.undo === "yes") return rollback();
+    if (m.undo === "no") { txt.textContent = "takeback declined"; return; }
+    if (m.restart) return restart();
     if (m.sync) {
       state = m.sync;
       turn = m.turn;
@@ -329,15 +368,67 @@ async function join(room) {
 }
 
 function commit(id, x, y, r) {
+  past.push({ board: state.map(p => ({ ...p })), turn });
   const won = apply(state, id, x, y, r);
   turn = turn === "w" ? "b" : "w";
   if (won) over = turn === "w" ? "b" : "w";
   sel = null;
+  grip = null;
   mask = takes = null;
   face();
   if (!sliding) say();
   draw();
+  offer();
 }
+
+function offer() {
+  tools.hidden = board.hidden;
+  againer.hidden = !over;
+  undoer.disabled = !past.length;
+}
+
+function rollback() {
+  const snap = past.pop();
+  if (!snap) return;
+  state = snap.board;
+  turn = snap.turn;
+  over = null;
+  sel = null;
+  hover = null;
+  grip = null;
+  mask = takes = null;
+  face();
+  say();
+  draw();
+  offer();
+}
+
+function restart() {
+  past.length = 0;
+  state = start();
+  turn = "w";
+  over = null;
+  sel = null;
+  hover = null;
+  grip = null;
+  mask = takes = null;
+  face();
+  say();
+  draw();
+  offer();
+}
+
+undoer.onclick = () => {
+  if (!past.length) return;
+  if (solo) return rollback();
+  dc.send(JSON.stringify({ undo: "ask" }));
+  txt.textContent = "takeback offered…";
+};
+
+againer.onclick = () => {
+  if (!solo) dc.send(JSON.stringify({ restart: true }));
+  restart();
+};
 
 const say = () => {
   cv.style.borderColor = turn === "w" ? "#fff" : "#111";
@@ -421,6 +512,7 @@ const local = side => {
   face();
   say();
   draw();
+  offer();
 };
 
 if (location.hash === "#solo") local("w");
@@ -442,42 +534,59 @@ function play(pt) {
   return true;
 }
 
-let down = null, touch = false, fresh = false;
+let down = null, touch = false, fresh = false, grip = null, anchor = null, moving = false;
 
 function drop() {
   sel = null;
+  grip = null;
+  moving = false;
   mask = takes = null;
   draw();
 }
 
-cv.onpointermove = e => { if (sel) { hover = snap(aim(world(e))); draw(); } };
+cv.onpointermove = e => {
+  if (!sel) return;
+  const here = world(e);
+  if (touch && !moving && anchor && Math.max(Math.abs(here[0] - anchor[0]), Math.abs(here[1] - anchor[1])) < 0.25) return;
+  moving = true;
+  grip = here;
+  hover = snap(aim(here));
+  draw();
+};
+
+cv.oncontextmenu = e => e.preventDefault();
 
 cv.onpointerdown = e => {
   e.preventDefault();
+  if (e.button) return;
   if (over || (!solo && (turn !== me || !live))) return;
   cv.setPointerCapture(e.pointerId);
   touch = e.pointerType !== "mouse";
   const here = world(e), pt = snap(aim(here));
+  grip = here;
+  anchor = here;
   down = pt;
   const pick = state.find(p => p.c === (solo ? turn : me) && Math.max(Math.abs(p.x - here[0]), Math.abs(p.y - here[1])) < HALF);
   fresh = !!pick;
   if (sel && pick?.id === sel.id) return drop();
   if (sel && !pick) {
-    if (touch) { hover = pt; draw(); }
-    else if (!play(hover && legal(state, sel.id, hover[0], hover[1]) ? hover : pt)) drop();
+    if (!touch && !play(hover && legal(state, sel.id, hover[0], hover[1]) ? hover : pt)) drop();
     return;
   }
   sel = pick ?? null;
-  hover = sel ? pt : null;
+  hover = sel && !touch ? pt : null;
   if (sel) buildMask(); else mask = takes = null;
   draw();
 };
 
 cv.onpointerup = e => {
   const up = snap(aim(world(e)));
-  const dragged = down && Math.max(Math.abs(up[0] - down[0]), Math.abs(up[1] - down[1])) > 0.25;
+  const started = moving;
   down = null;
-  if (sel && touch && (dragged || !fresh) && !play(up)) drop();
+  moving = false;
+  if (!sel || !touch) return;
+  if (started) { if (!play(up)) drop(); }
+  else if (!fresh) drop();
 };
 
 cv.onpointercancel = () => { down = null; };
