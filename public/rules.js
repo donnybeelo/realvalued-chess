@@ -63,11 +63,27 @@ function hits(ax, ay, bx, by, q) {
   return true;
 }
 
+export function castling(ps, id, x, y) {
+  const k = ps.find(q => q.id === id);
+  if (!k || k.t !== "k" || k.moved) return null;
+  const dir = Math.sign(x - k.x);
+  if (!dir || Math.abs(Math.abs(x - k.x) - 2) > HALF || Math.abs(y - k.y) > HALF) return null;
+  const rook = ps.find(q => q.c === k.c && q.t === "r" && !q.moved
+    && Math.sign(q.x - k.x) === dir && Math.abs(q.y - k.y) <= 1);
+  if (!rook) return null;
+  const lo = Math.min(k.x, rook.x), hi = Math.max(k.x, rook.x);
+  if (ps.some(q => q !== k && q !== rook && q.x > lo && q.x < hi && Math.abs(q.y - k.y) < 1)) return null;
+  const rx = 2 * (k.x + 1.5 * dir) - x;
+  if (Math.abs(rx - x) < HALF - E) return null;
+  return { rook, rx, ry: y };
+}
+
 export function legal(ps, id, x, y) {
   const p = ps.find(q => q.id === id);
   if (!p) return null;
   if (x < HALF - E || x > N - HALF + E || y < HALF - E || y > N - HALF + E) return null;
-  if (!region(p, x - p.x, y - p.y)) return null;
+  const swap = castling(ps, id, x, y);
+  if (!swap && !region(p, x - p.x, y - p.y)) return null;
 
   let cap = null;
   for (const q of ps) {
@@ -83,19 +99,26 @@ export function legal(ps, id, x, y) {
     if (q.c !== p.c && !(p.t === "p" && q.t === "p")) continue;
     if (Math.max(Math.abs(q.x - x), Math.abs(q.y - y)) < HALF - E) return null;
   }
-  if (p.t !== "n") {
+  if (p.t !== "n" && !swap) {
     for (const q of ps) {
       if (q.id === id || q === cap) continue;
       if (hits(p.x, p.y, x, y, q)) return null;
     }
   }
-  return { cap };
+  return { cap, swap };
 }
 
-export function apply(ps, id, x, y, cap) {
+export function apply(ps, id, x, y, r) {
+  const cap = r?.cap;
   const p = ps.find(q => q.id === id);
   if (cap) ps.splice(ps.indexOf(cap), 1);
   p.x = x; p.y = y;
+  p.moved = true;
+  if (r?.swap) {
+    r.swap.rook.x = r.swap.rx;
+    r.swap.rook.y = r.swap.ry;
+    r.swap.rook.moved = true;
+  }
   if (p.t === "p" && (p.c === "w" ? y >= N - 1 : y <= 1)) p.t = "q";
   return !!cap && cap.t === "k";
 }
@@ -171,6 +194,42 @@ if (import.meta.main) {
   ok(legal(ps2, at2(2.5, 0.5), 4.75, 2.3), "a steeper line threads the gap the diamond leaves");
   const drift = [{ id: 0, c: "w", t: "p", x: 4.5, y: 3.4 }, { id: 1, c: "b", t: "p", x: 5.4, y: 4.55 }];
   ok(legal(drift, 0, 5.4, 4.35)?.cap?.id === 1, "a drifted pawn still takes what it attacks");
+  const home = start();
+  const king = home.find(q => q.c === "w" && q.t === "k").id;
+  for (const q of home.filter(q => q.c === "w" && q.t === "p")) q.y = 3.5;
+  ok(!legal(home, king, 6.5, 0.5), "cannot castle through the bishop and knight");
+  for (const q of home.filter(q => q.c === "w" && (q.t === "b" || q.t === "n") && q.x > 4)) q.y = 3.5;
+  const rite = legal(home, king, 6.5, 0.5);
+  ok(rite?.swap?.rook.x === 7.5, "castles once the short side is clear");
+  apply(home, king, 6.5, 0.5, rite);
+  ok(rite.swap.rook.x === 5.5 && home.find(q => q.id === king).x === 6.5, "the rook hops to the far side of the king");
+  ok(!legal(home, king, 4.5, 0.5), "and a king that has moved cannot castle again");
+  const late = start();
+  const kid = late.find(q => q.c === "w" && q.t === "k").id;
+  for (const q of late.filter(q => q.c === "w" && q.t !== "k" && q.t !== "r")) q.y = 3.5;
+  late.find(q => q.c === "w" && q.t === "r" && q.x < 1).moved = true;
+  ok(!legal(late, kid, 2.5, 0.5), "nor castle with a rook that has moved");
+  const both = start();
+  const bid = both.find(q => q.c === "w" && q.t === "k").id;
+  for (const q of both.filter(q => q.c === "w" && q.t !== "k" && q.t !== "r")) q.y = 3.5;
+  const queenside = legal(both, bid, 2.5, 0.5);
+  ok(queenside?.swap?.rook.x === 0.5, "the king reaches the c file queenside");
+  apply(both, bid, 2.5, 0.5, queenside);
+  ok(Math.abs(queenside.swap.rook.x - 3.5) < E, "and the rook mirrors onto the d file");
+  const askew = start();
+  const did = askew.find(q => q.c === "w" && q.t === "k").id;
+  for (const q of askew.filter(q => q.c === "w" && q.t !== "k" && q.t !== "r")) q.y = 3.5;
+  const off = legal(askew, did, 2.3, 0.6);
+  apply(askew, did, 2.3, 0.6, off);
+  ok(Math.abs(off.swap.rook.x - 3.7) < E && off.swap.rook.y === 0.6, "a drifted king pushes the rook the other way, onto its own line");
+  ok(legal(late, kid, 6.5, 0.5)?.swap, "but the other side still works");
+  const lift = start();
+  const pid = lift.find(q => q.c === "w" && q.t === "p" && q.x === 4.5).id;
+  const runner = lift.find(q => q.id === pid);
+  runner.y = 6.4;
+  lift.splice(lift.indexOf(lift.find(q => q.c === "b" && q.t === "p" && q.x === 4.5)), 1);
+  apply(lift, pid, 4.5, 7.4, legal(lift, pid, 4.5, 7.4));
+  ok(runner.t === "q", "a pawn that reaches the far rank promotes");
   const walk = [{ id: 0, c: "w", t: "k", x: 4.5, y: 7.5 }, { id: 1, c: "b", t: "p", x: 3.5, y: 6.5 }];
   ok(legal(walk, 0, 4.2, 6.5), "a king may step a square in any direction");
   ok(!legal(walk, 0, 4.2, 6.2), "but not a square and a half");
