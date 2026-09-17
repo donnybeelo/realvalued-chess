@@ -6,6 +6,8 @@
   body { margin: 0; -webkit-user-select: none; user-select: none; background: #808080; color: #111; font: 14px system-ui; display: grid; place-content: center; place-items: center; gap: .5rem; min-height: 100svh; overflow: hidden; }
   canvas { touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; display: block; width: min(96vw - 20px, 100svh - 5.5rem); height: auto; border: 10px solid #fff; }
   #board { position: relative; }
+  #graves { position: fixed; inset: 4px 10px auto; display: flex; flex-direction: column; justify-content: space-between; height: calc(100svh - 8px); pointer-events: none; }
+  .tray { display: flex; gap: 2px; height: 24px; }
   #tools { position: fixed; right: 10px; bottom: 10px; display: flex; gap: .5rem; }
   #board[hidden] { display: none; }
   #msg, #msg2 { position: absolute; top: 100%; left: 0; right: 0; text-align: center; z-index: -1; }
@@ -30,6 +32,7 @@
   <div id="msg"><span id="txt"></span></div>
   <div id="msg2" hidden><span id="txt2"></span></div>
 </div>
+<div id="graves"><div id="lostw" class="tray"></div><div id="lostb" class="tray"></div></div>
 <div id="tools" hidden>
   <button id="undo">undo</button>
   <button id="again" hidden>play again</button>
@@ -39,7 +42,16 @@ import { N, HALF, start, legal, apply } from "./rules.js";
 
 const S = 80, cv = document.getElementById("c"), g = cv.getContext("2d"), msg = document.getElementById("msg"), txt = document.getElementById("txt"), msg2 = document.getElementById("msg2"), txt2 = document.getElementById("txt2");
 const tools = document.getElementById("tools"), undoer = document.getElementById("undo"), againer = document.getElementById("again");
+const lostw = document.getElementById("lostw"), lostb = document.getElementById("lostb");
 const past = [];
+let dead = [];
+
+const tomb = p => `<svg viewBox="0 0 100 100" width="24" height="24"><path d="${ART[p.t]}" fill="${p.c === "w" ? "#fff" : "#111"}" stroke="${p.c === "w" ? "#111" : "#fff"}" stroke-width="4" stroke-linejoin="round"/></svg>`;
+
+function graves() {
+  lostb.innerHTML = dead.filter(p => p.c === "b").map(tomb).join("");
+  lostw.innerHTML = dead.filter(p => p.c === "w").map(tomb).join("");
+}
 const ART = {
   p: "M64 26a14 14 0 1 1-28 0 14 14 0 1 1 28 0zM37 44h26l7 34H30zM24 78h52v10H24z",
   r: "M30 12h9v8h8v-8h6v8h8v-8h9v20H30zM34 34h32l5 44H29zM24 78h52v10H24z",
@@ -251,7 +263,7 @@ function wire(channel, colour) {
     offer();
     me = colour;
     if (!state.length) { state = start(); turn = "w"; }
-    else if (me === "w") dc.send(JSON.stringify({ sync: state, turn, over }));
+    else if (me === "w") dc.send(JSON.stringify({ sync: state, turn, over, dead }));
     say();
     rest();
     draw();
@@ -272,10 +284,12 @@ function wire(channel, colour) {
       state = m.sync;
       turn = m.turn;
       over = m.over;
+      dead = m.dead ?? [];
       sel = null;
       mask = takes = null;
       say();
       draw();
+      offer();
       return;
     }
     const p = state.find(q => q.id === m.id);
@@ -368,7 +382,8 @@ async function join(room) {
 }
 
 function commit(id, x, y, r) {
-  past.push({ board: state.map(p => ({ ...p })), turn });
+  past.push({ board: state.map(p => ({ ...p })), turn, fallen: dead.slice() });
+  if (r?.cap) dead.push({ c: r.cap.c, t: r.cap.t });
   const won = apply(state, id, x, y, r);
   turn = turn === "w" ? "b" : "w";
   if (won) over = turn === "w" ? "b" : "w";
@@ -384,6 +399,7 @@ function commit(id, x, y, r) {
 function offer() {
   tools.hidden = board.hidden;
   againer.hidden = !over;
+  graves();
   undoer.disabled = !past.length;
 }
 
@@ -392,6 +408,7 @@ function rollback() {
   if (!snap) return;
   state = snap.board;
   turn = snap.turn;
+  dead = snap.fallen;
   over = null;
   sel = null;
   hover = null;
@@ -405,6 +422,7 @@ function rollback() {
 
 function restart() {
   past.length = 0;
+  dead = [];
   state = start();
   turn = "w";
   over = null;
